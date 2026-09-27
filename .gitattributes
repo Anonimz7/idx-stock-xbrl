@@ -1,0 +1,29 @@
+# Normalize line endings in the repository, not in the working copy.
+#
+# `core.autocrlf` is a *local* setting, so two machines can disagree about the
+# same file and each sees the other's version as wholly modified -- 58 files of
+# pure noise on a checkout. Pinning it here makes the repository the single
+# source of truth instead of whoever cloned it last.
+#
+# The working copy on Windows still gets CRLF for these types; only what is
+# stored is fixed.
+
+* text=auto
+
+*.py    text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.sql   text eol=lf
+
+# The Firefox manifest is read as JSON; a stray byte order mark or CRLF is not
+# worth debugging at load time.
+extension/manifest.json text eol=lf
+
+# Generated or binary: never touched.
+*.zip   binary
+*.png   binary
+*.ico   binary
