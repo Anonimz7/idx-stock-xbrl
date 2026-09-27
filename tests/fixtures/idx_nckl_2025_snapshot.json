@@ -1,0 +1,78 @@
+{
+  "source": "IDX company profile page, Laporan Keuangan panel, year 2025",
+  "captured_for": "NCKL",
+  "note": "Regression fixture. Refs are illustrative and must never be hardcoded in the flow; they change on every snapshot.",
+  "elements": [
+    {
+      "ref": "e19",
+      "role": "combobox",
+      "name": "Search for option"
+    },
+    {
+      "ref": "e20",
+      "role": "searchbox",
+      "name": "Search Company Code"
+    },
+    {
+      "ref": "e27",
+      "role": "button",
+      "name": "Laporan Keuangan"
+    },
+    {
+      "ref": "e32",
+      "role": "combobox",
+      "name": "Search for option"
+    },
+    {
+      "ref": "e33",
+      "role": "searchbox",
+      "name": "TW2 Loading..."
+    },
+    {
+      "ref": "e34",
+      "role": "combobox",
+      "name": "Search for option"
+    },
+    {
+      "ref": "e35",
+      "role": "searchbox",
+      "name": "2026 Loading...",
+      "value": "2026"
+    },
+    {
+      "ref": "e37",
+      "role": "option",
+      "name": "2025"
+    },
+    {
+      "ref": "e40",
+      "role": "link",
+      "name": "Unduh 2025 TW1",
+      "href": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/TW1/NCKL/inlineXBRL.zip"
+    },
+    {
+      "ref": "e41",
+      "role": "link",
+      "name": "Unduh 2025 TW2",
+      "href": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/TW2/NCKL/inlineXBRL.zip"
+    },
+    {
+      "ref": "e42",
+      "role": "link",
+      "name": "Unduh 2025 TW3",
+      "href": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/TW3/NCKL/inlineXBRL.zip"
+    },
+    {
+      "ref": "e43",
+      "role": "link",
+      "name": "Unduh 2025 Audit",
+      "href": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/Audit/NCKL/inlineXBRL.zip"
+    },
+    {
+      "ref": "e44",
+      "role": "link",
+      "name": "Laporan Keuangan 2025 TW1 (PDF)",
+      "href": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/TW1/NCKL/laporan.pdf"
+    }
+  ]
+}

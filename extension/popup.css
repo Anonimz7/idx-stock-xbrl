@@ -1,0 +1,62 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+}
+
+main {
+  padding: 16px;
+}
+
+h1 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+label {
+  display: block;
+  margin: 10px 0 4px;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+button {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.status {
+  margin: 0 0 8px;
+}
+
+.transport {
+  margin: 0 0 8px;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+.error {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+[hidden] {
+  display: none !important;
+}

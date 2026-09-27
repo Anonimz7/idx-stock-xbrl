@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "firefox-bridge"
+version = "0.2.0"
+description = "Local Firefox browser bridge with REST and MCP interfaces, plus the IDX report downloader"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.141,<1",
+  "httpx>=0.28,<1",
+  "mcp[cli]>=2.2,<3",
+  "pydantic>=2.12,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.13,<2",
+  "pytest>=8,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.8,<1",
+]
+
+[project.scripts]
+firefox-bridge = "firefox_bridge.server:main"
+firefox-bridge-mcp = "firefox_bridge.mcp_server:main"
+firefox-bridge-download = "firefox_bridge.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["firefox_bridge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["firefox_bridge", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # import sorting
+  "UP",   # pyupgrade
+  "B",    # bugbear
+  "SIM",  # simplify
+  "RET",  # return statements
+  "ARG",  # unused arguments
+]
+ignore = [
+  "E501",    # line length is handled by the formatter
+  "SIM105",  # contextlib.suppress is slower to read here
+  "RET504",  # named results before return read better in long functions
+]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI requires callables in argument defaults; the pattern is idiomatic there.
+"firefox_bridge/app.py" = ["B008"]
+# Test doubles intentionally accept unused arguments.
+"tests/*" = ["ARG001", "ARG002"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["firefox_bridge"]
+strict = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["^extension/"]
+
+[tool.coverage.run]
+branch = true
+source = ["firefox_bridge"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]

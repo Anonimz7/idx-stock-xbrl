@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firefox Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1>Firefox Bridge</h1>
+    <p id="status" class="status" role="status" aria-live="polite">Loading</p>
+    <p id="transport" class="transport" hidden></p>
+    <p id="error" class="error" role="alert" hidden></p>
+
+    <form id="settings-form">
+      <label for="url">Bridge URL</label>
+      <input id="url" name="url" type="url" value="ws://127.0.0.1:8765/extension" autocomplete="url" required>
+
+      <label for="token">Token</label>
+      <input id="token" name="token" type="password" autocomplete="off" spellcheck="false">
+
+      <div class="actions">
+        <button id="save" type="submit">Save</button>
+        <button id="connect" type="button">Connect</button>
+        <button id="disconnect" type="button">Disconnect</button>
+      </div>
+    </form>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

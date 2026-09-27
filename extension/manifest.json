@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Firefox Bridge",
+  "description": "Connect a normal Firefox profile to a local browser bridge.",
+  "version": "0.1.8",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "ws://127.0.0.1/*",
+    "ws://localhost/*",
+    "wss://127.0.0.1/*",
+    "wss://localhost/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:*"
+  },
+  "background": {
+    "scripts": [
+      "page_functions.js",
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "Firefox Bridge",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox-bridge@local.extension",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "browsingActivity",
+          "websiteContent",
+          "websiteActivity"
+        ]
+      }
+    }
+  }
+}
