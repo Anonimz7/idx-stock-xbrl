@@ -39,6 +39,7 @@ from firefox_bridge.downloader.staging import (
 from firefox_bridge.idx.link_parser import quarter_from_report_href
 from firefox_bridge.pacing import minimum_one_second
 from firefox_bridge.progress import detail, notice, problem, progress
+from firefox_bridge.stocksource import StockListError, read_stock_list
 from firefox_bridge.validation import ValidationError, normalize_stock_code
 
 DEFAULT_STOCK_DELAY_SECONDS = 3.0
@@ -68,6 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Audit instead of download: 'verify' checks the history against the files "
             "on disk and writes nothing; 'rebuild' reconstructs the history from the "
             "archives that exist."
+        ),
+    )
+    parser.add_argument(
+        "--stocks-file",
+        type=str,
+        default=None,
+        help=(
+            "Read stock codes from a .sql dump or a .csv/.txt table, excluding rows "
+            "whose delisted flag is set. Merged with --stocks when both are given."
         ),
     )
     parser.add_argument("--year", type=int, default=2025, help="Reporting year")
@@ -318,17 +328,38 @@ def run(argv: Sequence[str] | None = None) -> int:
     if args.history is not None:
         return _run_history_command(args.history, args.download_dir)
 
-    if args.stocks is None:
-        problem("No stock codes supplied. Gunakan --stocks, atau --history verify/rebuild.")
+    if args.stocks is None and args.stocks_file is None:
+        problem(
+            "No stock codes supplied. Gunakan --stocks, --stocks-file, "
+            "atau --history verify/rebuild."
+        )
         return EXIT_INVALID_INPUT
 
     try:
-        stock_codes = parse_stock_codes(args.stocks)
+        stock_codes = parse_stock_codes(args.stocks) if args.stocks else []
     except argparse.ArgumentTypeError as error:
         problem(f"Stock code tidak valid: {error}")
         return EXIT_INVALID_INPUT
+
+    if args.stocks_file is not None:
+        try:
+            stock_list = read_stock_list(Path(args.stocks_file))
+        except StockListError as error:
+            problem(f"Daftar saham tidak bisa dibaca: {error}")
+            return EXIT_INVALID_INPUT
+        progress(
+            f"STEP 0: daftar saham dari {args.stocks_file}: "
+            f"{len(stock_list.codes)} aktif, {stock_list.skipped_delisted} delisted dilewati",
+            file=args.stocks_file,
+            active=len(stock_list.codes),
+            delisted=stock_list.skipped_delisted,
+        )
+        for code in stock_list.codes:
+            if code not in stock_codes:
+                stock_codes.append(code)
+
     if not stock_codes:
-        problem("No stock codes supplied")
+        problem("Tidak ada kode saham aktif setelah dibaca dari file")
         return EXIT_INVALID_INPUT
 
     all_detected = args.all_detected or args.all_quarters
