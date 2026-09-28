@@ -29,7 +29,12 @@ from .errors import DownloaderError, DownloadTimeout, IntegrityError, StaleRefer
 from .filesystem import move_completed_download, wait_for_completed_download
 from .history import history_entry, load_download_history, record_download_history
 from .integrity import audit_stock_year_hashes, file_sha256
-from .models import DownloadResult
+from .models import (
+    SHA256_KEY,
+    STATUS_DOWNLOADED,
+    STATUS_SKIPPED,
+    DownloadResult,
+)
 from .paths import (
     download_root,
     final_report_path,
@@ -104,6 +109,35 @@ def _discard_all(paths: list[Path]) -> list[Path]:
     return removed
 
 
+def _make_result(
+    stock: str,
+    year: int,
+    quarter: int,
+    href: str,
+    final_path: Path,
+    history: dict[str, Any],
+    status: str,
+    attempts: int = 1,
+) -> DownloadResult:
+    """Build a result, reading the recorded hash back rather than re-hashing.
+
+    The history write has already hashed the file. Hashing it a second time just
+    to fill in a report field would double the IO of every download for no gain.
+    """
+    entry = history_entry(history, stock, year, quarter) or {}
+    return DownloadResult(
+        stock=stock,
+        href=href,
+        filename=str(final_path),
+        status=status,
+        year=year,
+        quarter=quarter,
+        sha256=str(entry.get(SHA256_KEY) or ""),
+        bytes=final_path.stat().st_size if final_path.is_file() else 0,
+        attempts=attempts,
+    )
+
+
 def download_detected_link(
     client: FirefoxBridgeClient,
     tab_id: str,
@@ -161,7 +195,7 @@ def download_detected_link(
                     year=year,
                     quarter=quarter,
                 )
-            return DownloadResult(stock=stock, href=href, filename=str(final_path))
+            return _make_result(stock, year, quarter, href, final_path, history, STATUS_SKIPPED)
 
     if recorded is not None and not integrity_failed:
         notice(
@@ -177,11 +211,13 @@ def download_detected_link(
     href = validate_report_url(href, stock, year, quarter)
     staging_relative = staging_relative_filename(stock, year, quarter)
     staged: list[Path] = []
+    attempts = {"count": 0}
 
     # Only this part is retried. Moving the file and writing history come after
     # and must run exactly once: repeating a destructive step without checking
     # whether it already happened is how a report gets recorded twice.
     def _attempt() -> tuple[int, Path]:
+        attempts["count"] += 1
         return _fetch_archive(
             client, tab_id, stock, year, quarter, staging_relative, download_dir, staged
         )
@@ -220,7 +256,9 @@ def download_detected_link(
         bytes=size,
     )
     progress(f"STEP JSON OK: {history_path}")
-    return DownloadResult(stock=stock, href=href, filename=str(final_path))
+    return _make_result(
+        stock, year, quarter, href, final_path, history, STATUS_DOWNLOADED, attempts=attempts["count"]
+    )
 
 
 def download_stock(

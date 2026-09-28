@@ -9,6 +9,13 @@ from typing import Any
 INTEGRITY_VERIFIED = "verified"
 INTEGRITY_MISMATCH = "mismatch"
 
+# How a report ended up in its final folder. `downloaded` covers both a first
+# fetch and a repair after a missing or corrupt file; `attempts` and the run log
+# say which happened.
+STATUS_DOWNLOADED = "downloaded"
+STATUS_SKIPPED = "skipped"
+STATUS_PROCESSED = "processed"
+
 SHA256_KEY = "sha256"
 SIZE_KEY = "size"
 DUPLICATE_OF_KEY = "duplicate_of"
@@ -20,11 +27,31 @@ FILE_KEY = "file"
 
 @dataclass(slots=True)
 class DownloadResult:
-    """Outcome of processing one detected report link."""
+    """Outcome of processing one detected report link.
+
+    The reporting fields carry what a machine-readable run report needs: whether
+    the archive was fetched or already there, how many attempts it took, and the
+    hash that was recorded. A consumer should not have to re-read the history
+    JSON or re-hash a file to learn any of this.
+    """
 
     stock: str
     href: str
     filename: str
+    status: str = STATUS_PROCESSED
+    year: int = 0
+    quarter: int = 0
+    sha256: str = ""
+    bytes: int = 0
+    attempts: int = 1
+
+    @property
+    def downloaded(self) -> bool:
+        return self.status == STATUS_DOWNLOADED
+
+    @property
+    def skipped(self) -> bool:
+        return self.status == STATUS_SKIPPED
 
 
 @dataclass(frozen=True, slots=True)

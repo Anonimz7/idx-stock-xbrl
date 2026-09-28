@@ -14,7 +14,9 @@ import argparse
 import sys
 import time
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -25,12 +27,18 @@ from firefox_bridge.downloader.health import EXTENSION_UNAVAILABLE_STATUS, ensur
 from firefox_bridge.downloader.history import load_download_history, save_download_history
 from firefox_bridge.downloader.models import DownloadResult, RunSummary
 from firefox_bridge.downloader.orchestrator import download_all_detected, download_stock
-from firefox_bridge.downloader.paths import download_history_path
+from firefox_bridge.downloader.paths import download_history_path, download_root
 from firefox_bridge.downloader.reporting import print_run_summary
-from firefox_bridge.downloader.staging import describe, scan_staging, staging_root
+from firefox_bridge.downloader.run_report import build_run_report, write_run_report
+from firefox_bridge.downloader.staging import (
+    StagingScan,
+    describe,
+    scan_staging,
+    staging_root,
+)
 from firefox_bridge.idx.link_parser import quarter_from_report_href
 from firefox_bridge.pacing import minimum_one_second
-from firefox_bridge.progress import notice, problem, progress
+from firefox_bridge.progress import detail, notice, problem, progress
 from firefox_bridge.validation import ValidationError, normalize_stock_code
 
 DEFAULT_STOCK_DELAY_SECONDS = 3.0
@@ -85,6 +93,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=minimum_one_second,
         default=DEFAULT_STOCK_DELAY_SECONDS,
         help="Delay between stocks in seconds (minimum 1)",
+    )
+    parser.add_argument(
+        "--report",
+        type=str,
+        default=None,
+        help=(
+            "Write a machine-readable JSON report of the run to this path. "
+            "Never mixed into the progress output, so it can be read by a "
+            "scheduler or another tool while the run is still going."
+        ),
     )
     parser.add_argument(
         "--download-dir",
@@ -230,6 +248,69 @@ def _as_downloader_error(error: Exception) -> DownloaderError:
     return DownloaderError(str(error) or type(error).__name__)
 
 
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _command_block(args: argparse.Namespace, stock_codes: list[str]) -> dict[str, Any]:
+    """Record what was asked for, so a report is self-describing.
+
+    A report that says what succeeded but not what was requested cannot answer
+    "was this supposed to include BBCA?".
+    """
+    return {
+        "stocks": stock_codes,
+        "year": args.year,
+        "quarter": args.quarter,
+        "all_detected": bool(args.all_detected or args.all_quarters),
+        "delay": args.delay,
+        "mode": "history" if args.history else "download",
+    }
+
+
+def _staging_block(scan: StagingScan | None) -> dict[str, Any]:
+    if scan is None:
+        return {}
+    return {
+        "examined": scan.examined,
+        "removed": len(scan.removed),
+        "in_flight": len(scan.kept_in_flight),
+        "empty_dirs_removed": len(scan.empty_dirs_removed),
+    }
+
+
+def _write_report(
+    path: str,
+    *,
+    summary: RunSummary,
+    failures: list[dict[str, Any]],
+    started_at: str,
+    command: dict[str, Any],
+    environment: dict[str, Any],
+    staging: dict[str, Any],
+) -> None:
+    """Write the run report, and say so, but never let it break the run.
+
+    A report that cannot be written is worth a warning; it is not worth losing a
+    completed set of downloads over.
+    """
+    report = build_run_report(
+        summary=summary,
+        failures=failures,
+        started_at=started_at,
+        finished_at=_utc_now(),
+        command=command,
+        environment=environment,
+        staging=staging,
+    )
+    try:
+        written = write_run_report(report, Path(path))
+    except OSError as error:
+        problem(f"  -> laporan tidak bisa ditulis ke {path}: {error}")
+        return
+    detail(f"laporan run ditulis: {written}", report=path)
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     args = build_parser().parse_args(argv)
@@ -254,6 +335,31 @@ def run(argv: Sequence[str] | None = None) -> int:
     download_dir = Path(args.download_dir) if args.download_dir else None
     client = FirefoxBridgeClient()
     summary = RunSummary()
+    failures: list[dict[str, Any]] = []
+    started_at = _utc_now()
+    version = ""
+    scan: StagingScan | None = None
+
+    def _finish(code: int) -> int:
+        """Write the report on every exit path, including the early ones.
+
+        A report that is missing exactly when a run failed is the one case
+        anybody would want it for.
+        """
+        if args.report is not None:
+            _write_report(
+                args.report,
+                summary=summary,
+                failures=failures,
+                started_at=started_at,
+                command=_command_block(args, stock_codes),
+                environment={
+                    "extension_version": version,
+                    "download_dir": str(download_root(download_dir)),
+                },
+                staging=_staging_block(scan),
+            )
+        return code
 
     # Before a single paced browser step: if the extension is not connected, every
     # one of those steps fails identically and the user is left reading a timeout
@@ -263,7 +369,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     except ExtensionDisconnected as error:
         problem(f"PRAJAMAL: {error}")
         problem("  -> nyalakan bridge, lalu tekan Connect di popup extension")
-        return EXIT_BRIDGE_UNAVAILABLE
+        return _finish(EXIT_BRIDGE_UNAVAILABLE)
     progress(f"STEP 0.5: extension {version or 'terhubung'} (siap)", extension=version)
 
     # Before anything else: a run killed mid-download leaves a partial file at
@@ -311,6 +417,16 @@ def run(argv: Sequence[str] | None = None) -> int:
             # failures is read on the console, and "which of these can I retry"
             # should not require cross-referencing the JSON log.
             summary.failures.append(f"{stock}: [{kind}] {failure}")
+            failures.append(
+                {
+                    "stock": stock,
+                    "year": args.year,
+                    "quarter": args.quarter if not all_detected else None,
+                    "error_type": kind,
+                    "message": str(failure),
+                    "fatal": failure.fatal,
+                }
+            )
             problem(
                 f"FAILED {stock} {args.year} [{kind}]: {failure}",
                 stock=stock,
@@ -340,8 +456,8 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     print_run_summary(summary)
     if summary.fatal_error:
-        return EXIT_BRIDGE_UNAVAILABLE
-    return summary.exit_code
+        return _finish(EXIT_BRIDGE_UNAVAILABLE)
+    return _finish(summary.exit_code)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -325,7 +325,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | DATA-001 | berjalan | Skema v1 tetap; migration belum ada |
 | DATA-002 | berjalan | Atomic write sudah ada; lock file belum |
 | DATA-003 | selesai | `downloader/staging.py`: pindai `saham/staging/` di awal run (STEP 0), laporkan, lalu bersihkan file basi dan folder kosong; unduhan berjalan dipertahankan |
-| DATA-004 | belum | Status report belum ada di JSON |
+| DATA-004 | selesai | `DownloadResult` sekarang membawa `status` (downloaded/skipped), `year`, `quarter`, `sha256`, `bytes`, `attempts`; hash dibaca kembali dari history, tidak di-hash ulang |
 | DATA-005 | selesai | Hash dicek sebelum skip dan mismatch memicu unduhan ulang |
 | DATA-006 | selesai | `duplicate_of` diisi dan duplikat dicetak |
 | DATA-007 | selesai | `downloader/audit.py` + `--history verify\|rebuild`: audit dua arah, termasuk mendeteksi **orphan** (arsip ada, JSON tidak); rebuild mempertahankan URL yang sudah diketahui |
@@ -341,7 +341,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | CLI-004 | berjalan | `--stocks` ada; `--stocks-file` belum |
 | CLI-005 | berjalan | Skip otomatis ada; flag `--resume` belum eksplisit |
 | CLI-006 | belum | `--dry-run` belum |
-| CLI-007 | belum | JSON run report belum |
+| CLI-007 | selesai | `--report PATH` menulis JSON run report berversi; ditulis atomik, di semua exit path termasuk saat run gagal, dan tidak pernah tercampur ke output progress |
 | CLI-008 | berjalan | Noninteraktif sudah; belum ada flag eksplisit |
 | QA-001 | selesai | 10 file test: pacing, selector, parser, flow, history, orchestrator, CLI, regresi IDX, kontrak extension, bridge/client/config |
 | QA-002 | berjalan | `idx/` 89–100% dan `downloader/` 85–100% sudah melewati target 85%; total paket naik ke 78% karena `mcp_server.py` dan `server.py` belum diuji |
@@ -1288,6 +1288,94 @@ Pemeriksaan dipindah ke `run()`: tanpa `--history` dan tanpa `--stocks`, keluar
 | `test_the_cli_still_requires_stocks_without_history` | Kontrak lama utuh |
 
 Gate: 299 pytest (dari 276), ruff, mypy 35 file.
+
+### CLI-007 + DATA-004 — JSON run report (LULUS)
+
+Dikerjakan berpasangan karena sebenarnya satu pekerjaan: laporan JSON adalah tempat
+status report tinggal. Dipilih sebelum run 10 saham, karena 40 file butuh catatan
+yang bisa dipantau — bukan hanya output terminal yang harus di-scroll.
+
+```
+firefox-bridge-download --stocks ... --report logs\run.json
+```
+
+Tidak ada default. Flag-nya opsional, dan tanpa flag tidak ada file yang ditulis
+di mana pun — menebak lokasi laporan lebih buruk daripada-none.
+
+#### Dua pembaca, dua format
+
+Output console ditulis untuk orang yang menonton. Laporan ditulis untuk sesuatu
+yang **tidak ada** ketika run berlangsung: scheduler, dashboard, atau alat lain
+yang memutuskan perlu bertindak atau tidak. Itu alasan keduanya dipisah — mencampur
+keduanya membuat keduanya tidak terbaca, dan console bukan format log.
+
+`test_the_report_never_appears_in_the_progress_output` mengunci itu. Schema
+diversikan sejak awal: laporan dibaca program, dan program yang harus menebak
+apakah sebuah field masih berarti apa seperti bulan lalu adalah program yang
+pelan-pelan diam-diam rusak.
+
+#### Yang paling penting: laporan tetap ditulis saat run gagal
+
+Dilewati lewat satu helper `_finish()` yang dipanggil di **semua** exit path,
+termasuk gate yang gagal sebelum browser disentuh. Laporan yang hilang tepat
+ketika run bermasalah adalah justru laporan yang paling dibutuhkan.
+
+```
+$ run dengan extension mati
+$ --report run.json
+  report.environment.extension_version == ""
+  report.counts.failed == 0
+  report.exit_code == 3
+```
+
+#### `counts` memisahkan yang diunduh dari yang dilewati
+
+"4 ok" menyembunyikan satu-satunya pertanyaan yang penting: ada benar-benar
+terunduh sesuatu? Laporan memisahkan `downloaded` dari `skipped`, dan menambah
+`bytes` total. Terbukti pada data nyata setelah T3 dihapus:
+
+```
+counts : {'processed': 4, 'downloaded': 1, 'skipped': 3, 'failed': 0, 'bytes': 993883}
+NCKL 2025 TW1  skipped      243904 byte  attempts=1  6bfaad2ed340...
+NCKL 2025 TW2  skipped      244307 byte  attempts=1  2821f7bd7e30...
+NCKL 2025 TW3  downloaded   252792 byte  attempts=1  a3c8a83992c5...
+NCKL 2025 TW4  skipped      252880 byte  attempts=1  27aead4699e9...
+```
+
+TW3 terunduh ulang dengan hash `a3c8a83992c5…` — identik dengan run-run
+sebelumnya, jadi reproducibility byte-for-byte terkonfirmasi sekali lagi dari
+arah yang berbeda.
+
+#### Hash dibaca kembali, bukan dihitung ulang
+
+`record_download_history` sudah meng-hash file tersebut. Meng-hash lagi hanya
+untuk mengisi field laporan akan menggandakan IO setiap unduhan tanpa untung,
+jadi `_make_result()` membaca entri yang baru ditulis.
+
+#### Penulisan atomik, dan kegagalan tidak prosecute run
+
+Monitor yang mem-poll file ini tidak boleh pernah menangkapnya setengah tertulis —
+JSON terpotong akan terbaca sebagai run yang gagal, yang merupakan kebohongan
+tentang run. Dan laporan yang gagal ditulis tetap diberi peringatan di console
+serta **tidak** menggagalkan run: unduhan yang sudah selesai tidak boleh hilang
+karena sebuah file laporan tidak bisa dibuat.
+
+#### Tes yang menjaga
+
+| Pengaman | Yang dijaga |
+| --- | --- |
+| `test_the_report_is_versioned` | `schema_version` ada |
+| `test_the_report_describes_what_was_requested` | Laporan menyebut saham yang diminta |
+| `test_counts_separate_downloads_from_skips` | "4 ok" tidak menutupi "0 unduhan" |
+| `test_each_result_carries_its_own_hash_and_attempts` | Hash/ukuran/percobaan per hasil |
+| `test_a_failure_carries_its_type_so_a_consumer_need_not_parse_a_message` | Tipe error di laporan |
+| `test_writing_is_atomic` | Tidak ada `.tmp` tertinggal |
+| `test_no_report_file_means_no_file` | Tanpa flag, tanpa file |
+| `test_the_report_never_appears_in_the_progress_output` | Kedua format terpisah |
+| `test_a_report_is_written_even_when_the_extension_is_missing` | Laporan tetap ada saat gagal |
+| `test_an_unwritable_report_does_not_fail_the_run` | Unduhan tidak hilang gara-gara laporan |
+
+Gate: 313 pytest (dari 299), ruff, mypy 36 file.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 
