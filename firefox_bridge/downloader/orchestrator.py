@@ -41,6 +41,7 @@ from .paths import (
     staging_relative_filename,
     staging_report_path,
 )
+from .planning import DownloadPlan, plan_for
 from .retry import RETRY_ATTEMPTS, discard_staged, run_with_retry
 
 LINK_RETRY_SECONDS = 3.0
@@ -259,6 +260,32 @@ def download_detected_link(
     return _make_result(
         stock, year, quarter, href, final_path, history, STATUS_DOWNLOADED, attempts=attempts["count"]
     )
+
+
+def plan_stock_year(
+    client: FirefoxBridgeClient,
+    stock: str,
+    year: int,
+    download_dir: Path | None = None,
+) -> list[DownloadPlan]:
+    """Return what a real run would do for every report of one stock-year.
+
+    Opens the page and reads the same links a real run would, then asks
+    `plan_for` about each. No file is written, no history is touched, and no
+    download is started -- so this is safe to run against a history you are not
+    sure about, which is the only time you would want to ask.
+    """
+    tab_id = prepare_stock_year(client, stock, year)
+    links, _ = wait_for_detected_links(client, tab_id, year)
+    history = load_download_history(download_dir)
+    plans: list[DownloadPlan] = []
+    for link in links:
+        href = str(link.get("href") or "")
+        quarter = quarter_from_report_href(href)
+        if quarter is None:
+            continue
+        plans.append(plan_for(stock, year, quarter, href, download_dir, history))
+    return plans
 
 
 def download_stock(

@@ -34,6 +34,13 @@ PROFILE_URL = (
 )
 PROFILE_PATH_PREFIX = "/id/perusahaan-tercatat/profil-perusahaan-tercatat/"
 STUCK_LOADING_SECONDS = 5.0
+# How long to keep re-reading the page waiting for the year control after
+# 'Laporan Keuangan' is clicked. Measured: a ten-stock run failed on UNVR at 5
+# seconds while nine other stocks passed. Opening the panel by hand showed the
+# control present, with IDX's own fields still reading "Loading..." -- the page
+# is simply slower to populate for some issuers. Every other wait in this chain
+# gets 12 to 45 seconds, so 5 was the outlier rather than a considered bound.
+YEAR_CONTROL_TIMEOUT_SECONDS = 20.0
 SNAPSHOT_ELEMENTS = 2000
 SNAPSHOT_ELEMENTS_COMPACT = 800
 PROFILE_SETTLE_SECONDS = 3.0
@@ -138,7 +145,7 @@ def open_laporan_keuangan(
     client: FirefoxBridgeClient,
     tab_id: str,
     stock: str,
-    timeout: float = 5.0,
+    timeout: float = YEAR_CONTROL_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Open the Laporan Keuangan panel and return its year control.
 
@@ -175,7 +182,11 @@ def open_laporan_keuangan(
             )
             return year_control
 
-    raise RuntimeError(
+    # A built-in `TimeoutError`, not the downloader's `DownloadTimeout`: the page
+    # layer must not import the file layer, and the CLI translates this into the
+    # taxonomy at the boundary. Same reason the tab-load timeout above is also
+    # built-in.
+    raise TimeoutError(
         f"Kontrol tahun tidak muncul dalam {timeout:.0f} detik setelah membuka "
         f"'Laporan Keuangan' untuk {stock}"
     )

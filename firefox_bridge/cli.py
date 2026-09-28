@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,11 +22,24 @@ import httpx
 
 from firefox_bridge.client import FirefoxBridgeClient, FirefoxBridgeClientError
 from firefox_bridge.downloader.audit import rebuild_history, verify_history
-from firefox_bridge.downloader.errors import DownloaderError, ExtensionDisconnected
+from firefox_bridge.downloader.errors import (
+    DownloaderError,
+    DownloadTimeout,
+    ExtensionDisconnected,
+)
 from firefox_bridge.downloader.health import EXTENSION_UNAVAILABLE_STATUS, ensure_extension_ready
 from firefox_bridge.downloader.history import load_download_history, save_download_history
-from firefox_bridge.downloader.models import DownloadResult, RunSummary
-from firefox_bridge.downloader.orchestrator import download_all_detected, download_stock
+from firefox_bridge.downloader.models import (
+    STATUS_DOWNLOADED,
+    STATUS_SKIPPED,
+    DownloadResult,
+    RunSummary,
+)
+from firefox_bridge.downloader.orchestrator import (
+    download_all_detected,
+    download_stock,
+    plan_stock_year,
+)
 from firefox_bridge.downloader.paths import download_history_path, download_root
 from firefox_bridge.downloader.reporting import print_run_summary
 from firefox_bridge.downloader.run_report import build_run_report, write_run_report
@@ -69,6 +82,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Audit instead of download: 'verify' checks the history against the files "
             "on disk and writes nothing; 'rebuild' reconstructs the history from the "
             "archives that exist."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Detect what would be downloaded or skipped for each stock, and stop "
+            "there. Writes no file and changes no history. The browser is still "
+            "used, because the links have to be read from the page."
         ),
     )
     parser.add_argument(
@@ -249,6 +271,12 @@ def _as_downloader_error(error: Exception) -> DownloaderError:
     if isinstance(error, httpx.ConnectError):
         return ExtensionDisconnected(f"Bridge tidak menjawab: {error.__class__.__name__}")
 
+    if isinstance(error, TimeoutError):
+        # Raised by the page layer as a built-in so that layer does not have to
+        # import the file layer. Translated here, at the boundary, where every
+        # other boundary translation already happens.
+        return DownloadTimeout(str(error) or type(error).__name__)
+
     if isinstance(error, FirefoxBridgeClientError):
         status = getattr(error, "status_code", None)
         if status == EXTENSION_UNAVAILABLE_STATUS:
@@ -256,6 +284,84 @@ def _as_downloader_error(error: Exception) -> DownloaderError:
         return DownloaderError(f"Bridge menolak perintah (HTTP {status}): {error}")
 
     return DownloaderError(str(error) or type(error).__name__)
+
+
+def _run_dry_run(
+    client: FirefoxBridgeClient,
+    stock_codes: list[str],
+    args: argparse.Namespace,
+    download_dir: Path | None,
+    summary: RunSummary,
+    failures: list[dict[str, Any]],
+    finish: Callable[[int], int],
+) -> int:
+    """Report what a real run would do, changing nothing.
+
+    Deliberately placed before the staging scan: that scan deletes files, and a
+    dry run that quietly cleaned up wreckage is not a dry run. The browser is
+    still used, because the links have to be read from the page to answer the
+    question -- what *would* be downloaded is a property of the page, not of the
+    history alone.
+
+    `summary` and `failures` are the caller's, not local ones: the JSON report is
+    built from them by `finish`, so a local copy here would produce a report
+    claiming zero reports inspected for a dry run that inspected several.
+    """
+    for stock in stock_codes:
+        try:
+            plans = plan_stock_year(client, stock, args.year, download_dir)
+        except Exception as error:  # noqa: BLE001
+            failure = _as_downloader_error(error)
+            kind = type(failure).__name__
+            summary.failures.append(f"{stock}: [{kind}] {failure}")
+            failures.append(
+                {
+                    "stock": stock, "year": args.year, "quarter": None,
+                    "error_type": kind, "message": str(failure), "fatal": failure.fatal,
+                }
+            )
+            problem(
+                f"DRY-RUN GAGAL {stock} {args.year} [{kind}]: {failure}",
+                stock=stock, year=args.year, error_type=kind,
+            )
+            if failure.fatal:
+                return finish(EXIT_BRIDGE_UNAVAILABLE)
+            continue
+
+        for plan in plans:
+            label = "UNDUH" if plan.would_download else "LEWATI"
+            progress(
+                f"DRY-RUN {stock} {plan.year} TW{plan.quarter} -> {label} ({plan.reason})",
+                stock=plan.stock,
+                year=plan.year,
+                quarter=plan.quarter,
+                action=plan.action,
+                reason=plan.reason,
+            )
+
+        would_fetch = [plan for plan in plans if plan.would_download]
+        summary.results.extend(
+            DownloadResult(
+                stock=plan.stock, href=plan.href, filename=plan.final_path,
+                status=STATUS_DOWNLOADED if plan.would_download else STATUS_SKIPPED,
+                year=plan.year, quarter=plan.quarter, attempts=0,
+            )
+            for plan in plans
+        )
+        progress(
+            f"DRY-RUN {stock} {args.year}: {len(would_fetch)} akan diunduh, "
+            f"{len(plans) - len(would_fetch)} dilewati",
+            stock=stock, year=args.year, would_download=len(would_fetch),
+        )
+        time.sleep(args.delay)
+
+    total = sum(1 for item in summary.results if item.status == STATUS_DOWNLOADED)
+    progress(
+        f"DRY-RINGKAS: {total} akan diunduh, {len(summary.results) - total} dilewati, "
+        f"{len(summary.failures)} gagal. Tidak ada file yang diubah.",
+        would_download=total, skipped=len(summary.results) - total,
+    )
+    return finish(EXIT_FAILURES if summary.failures else EXIT_SUCCESS)
 
 
 def _utc_now() -> str:
@@ -402,6 +508,11 @@ def run(argv: Sequence[str] | None = None) -> int:
         problem("  -> nyalakan bridge, lalu tekan Connect di popup extension")
         return _finish(EXIT_BRIDGE_UNAVAILABLE)
     progress(f"STEP 0.5: extension {version or 'terhubung'} (siap)", extension=version)
+
+    if args.dry_run:
+        return _run_dry_run(
+            client, stock_codes, args, download_dir, summary, failures, _finish
+        )
 
     # Before anything else: a run killed mid-download leaves a partial file at
     # the exact path this run is about to download to, and the completion check

@@ -340,7 +340,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | CLI-003 | belum | Config file belum |
 | CLI-004 | berjalan | `--stocks` ada; `--stocks-file` belum |
 | CLI-005 | berjalan | Skip otomatis ada; flag `--resume` belum eksplisit |
-| CLI-006 | belum | `--dry-run` belum |
+| CLI-006 | selesai | `downloader/planning.py` + `--dry-run`: keputusan skip/fetch dipindah ke `plan_for()` yang dipakai bersama oleh kedua jalur, jadi dry-run tidak bisa menyimpang dari kenyataan |
 | CLI-007 | selesai | `--report PATH` menulis JSON run report berversi; ditulis atomik, di semua exit path termasuk saat run gagal, dan tidak pernah tercampur ke output progress |
 | CLI-008 | berjalan | Noninteraktif sudah; belum ada flag eksplisit |
 | QA-001 | selesai | 10 file test: pacing, selector, parser, flow, history, orchestrator, CLI, regresi IDX, kontrak extension, bridge/client/config |
@@ -1376,6 +1376,110 @@ karena sebuah file laporan tidak bisa dibuat.
 | `test_an_unwritable_report_does_not_fail_the_run` | Unduhan tidak hilang gara-gara laporan |
 
 Gate: 313 pytest (dari 299), ruff, mypy 36 file.
+
+### CLI-006 — `--dry-run` (LULUS)
+
+Satu-satunya mode yang seluruh nilainya terletak pada apakah ia bisa dipercaya.
+Kalau ia berbeda dari jalur nyata **ke arah yang menenangkan**, ia lebih buruk
+daripada tidak ada — karena itu arah yang tidak pernah diperiksa orang.
+
+#### Dua hal yang membuatnya bisa dipercaya
+
+**Keputusan dipindah ke satu fungsi.** `plan_for()` menjawab "lewati atau
+unduh?" untuk satu laporan, dan **jalur nyata serta dry-run memanggil fungsi yang
+sama**. Dry-run yang mengimplementasikan ulang aturan itu bisa berbeda dari
+kenyataan, dan tidak ada yang akan fastening memperhatikannya.
+
+Fungsi ini juga memanggil `validate_report_url`, jadi dry-run **menolak** URL
+off-host persis seperti jalurnya — tidak bisa melaporkan "aman" untuk sesuatu yang
+run akan tolak.
+
+**Dry-run berhenti sebelum scan staging.** Scan itu *menghapus* file. Melaporkan
+dengan jujur sambil diam-diam membersihkan puing bukan dry-run, dan itu jenis
+kejutan yang baru terlihat ketika unduhan parsial yang someone's cared about
+hilang. Ada test yang membuat `scan_staging` meledak jika dipanggil.
+
+#### Bug yang ditemukan test: laporan dry-run selalu kosong
+
+`_run_dry_run` membuat `summary` dan `failures` sendiri, tapi `finish` menutup
+yang milik pemanggil — sehingga laporan JSON selalu melaporkan `processed: 0`
+untuk dry-run yang memeriksa beberapa laporan. Itu laporan yang berbohong, dan
+sekarang keduanya memakai satu summary.
+
+Ada detail lain yang mudah terlewat: dry-run yangSkip tapi history-nya belum
+lengkap **akan menulis ulang JSON** saat run nyata. `history_needs_update`
+menandainya secara terbuka, karena "tidak ada yang berubah" akan jadi dusta.
+
+#### Yang tetap dipakai: browser
+
+Dry-run tetap membuka profil dan membaca link, karena "apa yang *akan* diunduh"
+adalah sifat halaman, bukan sifat history saja. Yang berbeda: tidak ada file yang
+ditulis, tidak ada history yang disentuh, tidak ada unduhan yang dimulai.
+
+Gate: 377 pytest (dari 362), ruff, mypy 38 file.
+
+### QA-008 — Run 10 saham sungguhan (36 file, LULUS)
+
+Ini kriteria fase pertama yang paling berat, dan pertama kali
+bukan test — test hanya bisamiau whoever. 10 saham, tahun 2025, semua kuartal.
+
+```
+NCKL, BBCA, BBRI, BMRI, TLKM, ASII, UNVR, ICBP, ANTM, ADRO
+```
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Link terdeteksi | 4 per saham, 40 total |
+| Hasil | 36 report, 8.4 MB |
+| `history verify` | **36 ok, 0 bermasalah, 0 tanpa catatan** |
+| Laporan JSON | `processed 36, downloaded 32, skipped 4, failed 1` |
+| Exit code | 1 (karena 1 saham gagal — bukan 0, dan bukan berhenti) |
+| Jumlah tab browser | **1** (`tab_id=53`) — satu profil dipakai ulang, sesuai aturan |
+| Urutan langkah | profil → Laporan Keuangan → tahun; tidak ada input tahun ke `Search Company Code` |
+| Jalur TW4 | `/Audit/` di semua saham ✓ |
+
+`skipped 4` adalah NCKL: sudah ada dari run sebelumnya, jadi **jalur skip dan
+jalur unduh keduanya teruji dalam satu run yang sama**.
+
+#### Kegagalan UNVR, dan apa yang sebenarnya terjadi
+
+```
+FAILED UNVR 2025 [DownloaderError]: Kontrol tahun tidak muncul dalam 5 detik
+setelah membuka 'Laporan Keuangan' untuk UNVR
+```
+
+Run **tidak berhenti** — ICBP, ANTM, ADRO tetap diproses. Itu jalur non-fatal
+bekerja. Tapi penyebabnya tidak boleh diasumsikan, jadi halaman UNVR dibuka
+manual dan diklik sendiri:
+
+```
+e31 heading Laporan Keuangan Tahun 2026. Periode TW2
+e35 searchbox 2026 Loading...
+```
+
+Kontrol year's **ada**. Halaman UNVR berat (94 elemen) dan butuh lebih dari 5
+detik untuk merender panel, dengan field IDX sendiri masih membaca
+"Loading...".
+
+Jadi ini **bukan** bug selector dan bukan bug retry: `timeout` kontrol tahun
+hanya 5 detik, sementara setiap tunggu lain di rantai yang sama dapat 12–45
+detik (tab 45s, profil 30s, deteksi link 12s). Angka 5 itu outlier, bukan
+batas yang pernah dipikirkan. Dinaikkan ke **20 detik** lewat konstanta bernama
+`YEAR_CONTROL_TIMEOUT_SECONDS`, lalu diuji ulang: UNVR lewat 4 dari 4, exit 0.
+
+#### Lapisan yang harus dijaga
+
+Error itu tetap `TimeoutError` bawaan, **bukan** `DownloadTimeout`. Percobaan
+pertama mengimpor `downloader.errors` ke dalam `idx/browser_flow.py` dan
+langsung menghasilkan circular import — karena `downloader/__init__` memanggil
+orkestrator yang memanggil `idx/browser_flow`.
+
+Lapisan halaman tidak boleh mengimpor lapisan file. Translasi ke taksonomi
+dilakukan di batasnya, di `_as_downloader_error`, tempat semua translasi
+batas lain sudah terjadi. Test menyassert `TimeoutError` secara spesifik supaya
+jalan pintas import di masa depan langsung patah.
+
+Gate: 377 pytest, ruff, mypy 38 file.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 

@@ -308,7 +308,11 @@ def test_open_laporan_keuangan_requires_the_year_control(no_sleep: None) -> None
         def click(self, **_kwargs: Any) -> dict[str, Any]:
             return {"clicked": True}
 
-    with pytest.raises(RuntimeError):
+    # `TimeoutError` specifically, not `RuntimeError`: the page layer must not
+    # import the file layer, so it raises a built-in and the CLI translates it
+    # into the downloader taxonomy at the boundary. Asserting the built-in pins
+    # that layering down, so a future import shortcut breaks here.
+    with pytest.raises(TimeoutError, match="Kontrol tahun tidak muncul"):
         open_laporan_keuangan(FakeClient(), "15", "NCKL", timeout=0.01)  # type: ignore[arg-type]
 
 
