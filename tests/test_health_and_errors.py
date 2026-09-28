@@ -259,3 +259,26 @@ def test_the_failure_line_names_the_error_type(
 
 def test_exit_codes_are_distinct() -> None:
     assert len({EXIT_SUCCESS, EXIT_FAILURES, EXIT_INVALID_INPUT, EXIT_BRIDGE_UNAVAILABLE}) == 4
+
+
+def test_a_cli_run_without_download_dir_stays_inside_the_suite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The suite must never resolve a path against the real `Downloads`.
+
+    Every path helper falls back to `%USERPROFILE%\\Downloads` when the download
+    root is omitted, and `scan_staging` clears stale files there. A CLI test that
+    omits `--download-dir` therefore reaches into the developer's real data. The
+    `isolated_download_dir` fixture is what prevents it; this asserts the fixture
+    is actually in force, so deleting it fails here rather than in someone's data.
+    """
+    import os
+
+    from firefox_bridge.downloader.paths import default_download_dir, download_root
+
+    assert "FIREFOX_BRIDGE_DOWNLOAD_DIR" in os.environ
+    root = download_root(None)
+    assert root == default_download_dir()
+    assert "pytest" in str(root) or "tmp" in str(root).lower(), (
+        f"the suite's download root is not a temp dir: {root}"
+    )

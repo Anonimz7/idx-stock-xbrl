@@ -36,8 +36,72 @@ from .paths import (
     staging_relative_filename,
     staging_report_path,
 )
+from .retry import RETRY_ATTEMPTS, discard_staged, run_with_retry
 
 LINK_RETRY_SECONDS = 3.0
+
+
+def _fetch_archive(
+    client: FirefoxBridgeClient,
+    tab_id: str,
+    stock: str,
+    year: int,
+    quarter: int,
+    staging_relative: str,
+    download_dir: Path | None,
+    staged: list[Path],
+) -> tuple[int, Path]:
+    """Download one report into staging and return its validated size and path.
+
+    Every step in here is safe to repeat: re-reading the page, asking Firefox to
+    download again, waiting, and validating. Nothing is moved and nothing is
+    recorded, so a failed attempt costs a partial file and a pause.
+
+    The path Firefox actually wrote is appended to `staged` rather than returned.
+    Firefox may not honour the requested filename, and a retry that cleaned up a
+    guessed path would leave the real one behind -- which is precisely the file
+    the completion check would then mistake for a finished download.
+    """
+    ref = _resolve_current_ref(client, tab_id, year, quarter)
+    wait_before_step(f"jeda sebelum download TW{quarter}")
+    progress(
+        f"STEP DOWNLOAD: TW{quarter} {stock} {year} -> staging: {staging_relative}",
+        stock=stock,
+        year=year,
+        quarter=quarter,
+    )
+    result = client.download(tab_id=tab_id, ref=ref, filename=staging_relative)
+    if not isinstance(result, dict) or not result.get("downloaded"):
+        # The download was refused rather than interrupted, so this is neither a
+        # timeout nor an integrity problem: a plain non-fatal per-stock failure.
+        raise DownloaderError(f"Download TW{quarter} {stock} {year} gagal dimulai: {result}")
+
+    staging_path = _resolve_staging_path(result, stock, year, quarter, download_dir)
+    staged.append(staging_path)
+
+    wait_before_step("jeda sebelum menunggu selesai download")
+    try:
+        size = wait_for_completed_download(staging_path)
+    except TimeoutError as error:
+        raise DownloadTimeout(str(error)) from error
+
+    # Checked here, while the file is still in staging: a truncated or non-ZIP
+    # download is rejected before it is ever recorded as a report, and discarding
+    # it costs nothing.
+    try:
+        size = validate_archive(staging_path)
+    except ValidationError as error:
+        raise IntegrityError(f"Arsip TW{quarter} ditolak: {error}") from error
+    return size, staging_path
+
+
+def _discard_all(paths: list[Path]) -> list[Path]:
+    """Remove every staged path recorded so far, then forget them."""
+    removed: list[Path] = []
+    for path in paths:
+        removed.extend(discard_staged(path))
+    paths.clear()
+    return removed
 
 
 def download_detected_link(
@@ -107,39 +171,34 @@ def download_detected_link(
             quarter=quarter,
         )
 
-    ref = _resolve_current_ref(client, tab_id, year, quarter)
-    staging_relative = staging_relative_filename(stock, year, quarter)
     # Re-checked here, not only during recognition. Between the snapshot and this
     # line the page could have been re-rendered, and this is the last point
     # before the URL is actually fetched.
     href = validate_report_url(href, stock, year, quarter)
-    wait_before_step(f"jeda sebelum download TW{quarter}")
-    progress(
-        f"STEP DOWNLOAD: TW{quarter} {stock} {year} -> staging: {staging_relative}",
-        stock=stock,
-        year=year,
-        quarter=quarter,
+    staging_relative = staging_relative_filename(stock, year, quarter)
+    staged: list[Path] = []
+
+    # Only this part is retried. Moving the file and writing history come after
+    # and must run exactly once: repeating a destructive step without checking
+    # whether it already happened is how a report gets recorded twice.
+    def _attempt() -> tuple[int, Path]:
+        return _fetch_archive(
+            client, tab_id, stock, year, quarter, staging_relative, download_dir, staged
+        )
+
+    size, staging_path = run_with_retry(
+        _attempt,
+        discard=lambda: _discard_all(staged),
+        on_retry=lambda attempt, error: notice(
+            f"RETRY {attempt}/{RETRY_ATTEMPTS - 1}: TW{quarter} "
+            f"{type(error).__name__}: {error}",
+            stock=stock,
+            year=year,
+            quarter=quarter,
+            attempt=attempt,
+        ),
     )
-    result = client.download(tab_id=tab_id, ref=ref, filename=staging_relative)
-    if not isinstance(result, dict) or not result.get("downloaded"):
-        # The download was refused rather than interrupted, so this is neither a
-        # timeout nor an integrity problem: a plain non-fatal per-stock failure.
-        raise DownloaderError(f"Download TW{quarter} {stock} {year} gagal dimulai: {result}")
 
-    staging_path = _resolve_staging_path(result, stock, year, quarter, download_dir)
-
-    wait_before_step("jeda sebelum menunggu selesai download")
-    try:
-        size = wait_for_completed_download(staging_path)
-    except TimeoutError as error:
-        raise DownloadTimeout(str(error)) from error
-    # Checked here, while the file is still in staging: a truncated or non-ZIP
-    # download is rejected before it is ever recorded as a report, and discarding
-    # it costs nothing.
-    try:
-        size = validate_archive(staging_path)
-    except ValidationError as error:
-        raise IntegrityError(f"Arsip TW{quarter} ditolak: {error}") from error
     wait_before_step("jeda sebelum memindahkan file")
     move_completed_download(staging_path, final_path, replace=integrity_failed)
     wait_before_step("jeda sebelum menulis JSON")

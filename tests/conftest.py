@@ -34,6 +34,26 @@ def isolated_log_dir(
     reset_logging()
 
 
+@pytest.fixture(autouse=True)
+def isolated_download_dir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Keep the test suite out of the developer's real `Downloads/saham`.
+
+    This one is not cosmetic. Every path helper takes an optional download root
+    and falls back to `%USERPROFILE%\\Downloads` when it is omitted -- so a test
+    that calls the CLI without `--download-dir` resolves against the real
+    folder. `scan_staging` then clears stale files and prunes directories there.
+
+    Found by measurement, not review: a marker directory placed in the real
+    staging folder did not survive a full `pytest` run. Pointing the whole suite
+    at a temp root makes the fallback unreachable from a test.
+    """
+    root = tmp_path_factory.mktemp("suite-downloads")
+    monkeypatch.setenv("FIREFOX_BRIDGE_DOWNLOAD_DIR", str(root))
+    yield
+
+
 def make_snapshot(elements: list[dict[str, Any]]) -> dict[str, Any]:
     """Return a minimal snapshot document for the given elements."""
     return {"elements": elements}

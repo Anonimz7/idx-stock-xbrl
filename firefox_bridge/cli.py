@@ -233,6 +233,18 @@ def run(argv: Sequence[str] | None = None) -> int:
                 break
         time.sleep(args.delay)
 
+    # Again at the end. The opening scan keeps yesterday's wreckage from being
+    # mistaken for a fresh download, but it leaves behind the empty year folders
+    # this run just emptied -- and a batch of hundreds of stocks would leave
+    # hundreds of directories nobody will ever look at.
+    leftovers = scan_staging(staging_root(download_dir))
+    if leftovers.empty_dirs_removed or leftovers.removed:
+        progress(
+            f"STEP END: {describe(leftovers)}",
+            removed=len(leftovers.removed),
+            in_flight=len(leftovers.kept_in_flight),
+        )
+
     print_run_summary(summary)
     if summary.fatal_error:
         return EXIT_BRIDGE_UNAVAILABLE

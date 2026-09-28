@@ -319,7 +319,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | CORE-002 | selesai | `bulk_downloader.py` 935 baris dipecah menjadi `idx/` (4 modul) dan `downloader/` (8 modul); shim lama tetap jalan |
 | CORE-003 | berjalan | `ReportLink`, `ReportTarget`, `DownloadResult`, `DownloadRecord`, `RunSummary` sudah typed; `dict` longgar masih dipakai di batas snapshot |
 | CORE-004 | selesai | `downloader/errors.py`: `ExtensionDisconnected` (fatal), `StaleReference`, `DownloadTimeout`, `IntegrityError`; CLI menerjemahkan kegagalan transport ke taksonomi dan mencantumkan nama tipenya di pesan |
-| CORE-005 | belum | Belum ada retry/backoff |
+| CORE-005 | selesai | `downloader/retry.py`: backoff eksponensial 1s/2s/4s (cap 30s), 3 percobaan; hanya `StaleReference`/`DownloadTimeout`/`IntegrityError`; `discard_staged()` jadi pagar idempotensi sebelum tiap retry; `move` dan tulis JSON **tidak** ikut di-retry |
 | CORE-006 | berjalan | `pacing.py` terpusat; `--delay` masih hardcoded default 3 detik di CLI |
 | CORE-007 | selesai | `downloader/health.py`: `ensure_extension_ready()` dijalankan sebagai STEP 0.5 sebelum workflow browser; kegagalan keluar sebagai exit 3 tanpa membuka tab |
 | DATA-001 | berjalan | Skema v1 tetap; migration belum ada |
@@ -1103,6 +1103,103 @@ ke `ExtensionDisconnected` yang sama dan exit code yang sama, dan itu yang diuji
 | `test_exit_codes_are_distinct` | 0/1/2/3 empat nilai berbeda |
 
 Gate: 253 pytest (dari 235), ruff, mypy 33 file.
+
+### CORE-005 — Retry hanya untuk yang transien (LULUS)
+
+Paling berisiko dari semua task P0, karena menyentuh tindakan destruktif. Acceptance
+criteria-nya sudah menyyaratkan dua hal, dan yang kedua justru yang berbahaya.
+
+#### Aturan 1: hanya kegagalan transien
+
+| Tipe | Di-retry? | Alasan |
+| --- | --- | --- |
+| `StaleReference` | ya | IDX me-render ulang; percobaan berikutnya bisa beda |
+| `DownloadTimeout` | ya | Unduhan lambat sering kali jadi cepat |
+| `IntegrityError` | ya | Bisa jadi unduhan terpotong, dan file basi dibuang dulu |
+| `DownloaderError` (base) | **tidak** | Tak terklasifikasi: gagal sekali dan keras, bukan tiga kali senyap |
+| `ExtensionDisconnected` | **tidak** | Sudah `fatal`; CLI menghentikan run |
+| `ValidationError` | **tidak** | Kode saham atau URL salah akan jadi salah lagi |
+
+`DownloaderError` dasar sengaja dikeluarkan. Tanpa itu, kesalahan baru yang belum
+diklasifikasi akan diulang tiga kali sambil terdengar seperti masalah sementara.
+
+#### Aturan 2: retry tidak boleh mewarisi puing sebelumnya
+
+Ini bukan teori. Sudah diukur lebih dulu: file yang tidak sedang ditulis memenuhi
+"ukuran bertahan sama dua kali sampel", jadi `wait_for_completed_download`
+melaporkannya selesai. Meaningunanya **retry di atas file parsial membuat
+percobaan kedua berlomba dengan file yang ukurannya cukup untuk menipu
+pemeriksaan itu lagi.**
+
+Setiap retry karena itu memanggil `discard_staged()` dulu: menghapus file staged
+**beserta sibling `.crdownload` dan `.part`**. Tanpa itu, retry bukan cara menghindari
+arsip korup, tapi cara mendapatkannya.
+
+#### Yang tidak di-retry sama sekali: `move` dan tulis JSON
+
+Wilayah retry hanya dari `_fetch_archive` — baca ulang halaman, minta download,
+tunggu, validasi. `move_completed_download` dan `record_download_history` berada
+di luar dan berjalan **tepat sekali**. Mengulang langkah destruktif tanpa
+memeriksa apakah sudah terjadi itulah cara satu laporan tercatat dua kali.
+Ada test khusus untuk ini: dua kegagalan lalu sukses, dan history harus berisi
+tepat satu entri.
+
+#### Path yang dipakai Firefox, bukan yang diminta
+
+Firefox boleh menjawab dengan nama file berbeda dari yang diminta
+(`... (1).zip`). Kalau `discard` membersihkan path hasil **tebakan**, file
+aslinya tertinggal — persis file yang akan disalahartikan sebagai unduhan
+selesai. Jadi `_fetch_archive` mencatat path yang benar-benar ditulis, dan
+`discard` memakai daftar itu.
+
+#### Dua bug yang ditemukan test sendiri
+
+**Test fake tidak konsisten sehingga suite menggantung 6 menit.** Fake saya
+melaporkan satu path tapi menulis path lain, lalu menunggu timeout asli 180
+detik. Satu kasus = 3 menit, cukup panjang untuk test rusak bersembunyi
+beberapa run. Fake diperbaiki agar melapor dan menulis path yang sama, dan
+ditambah fixture `isolated_timeout` yang memaksa timeout 1 detik di test —
+supaya kesalahan serupa menggagalkan cepat, bukan menggantung.
+
+**CATATAN PENTING: pytest menghapus isi folder Downloads Anda**
+
+Ini ditemukan saat memperbarui CLI, dan **bukan kosmetik**.
+
+Semua path helper menerima download root opsional dan jatuh ke
+`%USERPROFILE%\Downloads` kalau tidak diberi. Test CLI yang memanggil `run()`
+tanpa `--download-dir` karena itu resolve ke folder **sungguhan**, dan
+`scan_staging` lalu menghapus file basi serta memangkas folder di sana.
+
+Diukur, bukan dibaca kode: sebuah folder penanda di staging sungguhan **tidak
+bertahan** setelah `pytest` penuh — 276 test, semuanya hijau, penanda hilang.
+Kelas bug yang sama dengan polusi `logs/bridge.log` yang sudah diperbaiki, tapi
+lebih berbahaya karena yang hilang adalah data pengguna, bukan baris log.
+
+Perbaikannya: fixture `isolated_download_dir` di `conftest.py` mengarahkan
+seluruh suite ke root sementara lewat `FIREFOX_BRIDGE_DOWNLOAD_DIR`, membuat
+fallback ke folder asli tak terjangkau dari test. Diverifikasi: penanda sekarang
+**bertahan** melewati `pytest` penuh.
+
+Ada test yang mengunci fixture ini aktif, supaya menghapusnya gagal di test
+bukan diam-diam di folder orang.
+
+#### Tes yang menjaga
+
+| Pengaman | Yang dijaga |
+| --- | --- |
+| `test_permanent_failures_are_never_retried` | 3 tipe permanen tidak di-retry |
+| `test_the_base_error_is_excluded_on_purpose` | `DownloaderError` dasar tidak masuk daftar |
+| `test_backoff_grows_and_is_capped` | 1s/2s/4s, capped 30s |
+| `test_discard_removes_the_staged_file_and_its_temp_siblings` | File + `.crdownload` + `.part` terhapus |
+| `test_a_permanent_failure_is_not_retried` | Percobaan hanya 1 |
+| `test_attempts_are_finite_and_the_last_error_propagates` | Maksimal 3, error terakhir naik |
+| `test_discard_runs_before_every_retry` | Pagar idempotensi dipanggil |
+| `test_the_report_is_moved_and_recorded_exactly_once` | 3 percobaan → history tetap 1 entri |
+| `test_retries_exhausted_leaves_no_staged_file_behind` | Tidak ada laporan tercatat |
+| `test_the_path_firefox_actually_used_is_the_one_cleaned` | Path asli, bukan hasil tebakan, yang dibersihkan |
+| `test_a_cli_run_without_download_dir_stays_inside_the_suite` | Root suite bukan folder Downloads |
+
+Gate: 276 pytest (dari 253), ruff, mypy 34 file.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 
