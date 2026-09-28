@@ -54,6 +54,27 @@ def isolated_download_dir(
     yield
 
 
+@pytest.fixture(autouse=True)
+def isolated_cwd(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Run every test from a throwaway working directory.
+
+    The config file is discovered by looking for `firefox-bridge.toml` in the
+    working directory. That is the feature working as designed -- and it means a
+    single file dropped in the project root would change the behaviour of every
+    test, silently, and a test that writes one would change the behaviour of
+    every test that runs after it.
+
+    Same reasoning as `isolated_download_dir`: a file that changes results by
+    existing is only safe when the suite cannot see it.
+    """
+    monkeypatch.delenv("FIREFOX_BRIDGE_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path_factory.mktemp("suite-cwd"))
+    yield
+
+
 def make_snapshot(elements: list[dict[str, Any]]) -> dict[str, Any]:
     """Return a minimal snapshot document for the given elements."""
     return {"elements": elements}

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Any
 
 import pytest
-from firefox_bridge import cli
+from firefox_bridge import cli, runconfig
 from firefox_bridge.cli import (
     EXIT_FAILURES,
     EXIT_INVALID_INPUT,
@@ -20,8 +21,21 @@ from firefox_bridge.downloader.models import DownloadResult
 from firefox_bridge.downloader.reporting import print_run_summary
 
 
+def _parse(argv: list[str], config: str | None = None) -> argparse.Namespace:
+    """Parse and resolve, exactly as `run()` does.
+
+    Stopping at `parse_args` would assert on a namespace the real program never
+    uses: since CLI-003 the parser leaves every unset option at `None`, and the
+    defaults are applied afterwards so the config file gets a chance to supply
+    them first.
+    """
+    args = build_parser().parse_args(argv)
+    runconfig.resolve(args, config)
+    return args
+
+
 def test_all_detected_is_the_documented_default_path() -> None:
-    args = build_parser().parse_args(["--stocks", "NCKL", "--all-detected"])
+    args = _parse(["--stocks", "NCKL", "--all-detected"])
 
     assert args.all_detected is True
     assert args.all_quarters is False
@@ -30,14 +44,24 @@ def test_all_detected_is_the_documented_default_path() -> None:
 
 
 def test_all_quarters_remains_a_legacy_alias() -> None:
-    args = build_parser().parse_args(["--stocks", "NCKL", "--all-quarters"])
+    args = _parse(["--stocks", "NCKL", "--all-quarters"])
 
     assert args.all_quarters is True
+    assert args.all_detected is False, "an unset alias is False, not None"
 
 
 def test_delay_below_one_second_is_rejected() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--stocks", "NCKL", "--delay", "0.5"])
+
+
+def test_a_year_outside_the_sanity_bound_is_rejected() -> None:
+    """Before CLI-003, `--year 20255` was accepted and quietly downloaded nothing."""
+    for value in ("1899", "20255", "0"):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--stocks", "NCKL", "--year", value])
+    assert _parse(["--stocks", "NCKL", "--year", "1990"]).year == 1990
+    assert _parse(["--stocks", "NCKL", "--year", "2100"]).year == 2100
 
 
 def test_parse_stock_codes_normalizes_and_deduplicates() -> None:

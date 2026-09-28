@@ -1,0 +1,68 @@
+# Contoh config untuk `firefox-bridge-download`.
+#
+# Salin jadi `firefox-bridge.toml` di folder tempat Anda menjalankan perintah,
+# atau simpan di path mana saja lalu tunjuk dengan `--config PATH`.
+#
+# Berapa yang menang, dari yang paling tinggi:
+#
+#   1. argumen di command line   --year 2025
+#   2. file config ini
+#   3. nilai bawaan
+#
+# `download_dir` punya satu pengecualian: kalau tidak diisi di sini DAN tidak
+# diberi di command line, nilainya datang dari $FIREFOX_BRIDGE_DOWNLOAD_DIR,
+# lalu ~/Downloads.
+#
+# Berhati-hat dengan dua hal di bawah ini; keduanya menggigit di Windows.
+
+# Path Windows di dalam TOML: pakai tanda kutip tunggal (literal string).
+# Backslash di dalam tanda kutip ganda harus ditulis dua kali.
+#
+#   salah:  download_dir = "C:\Users\anda\Downloads"
+#   benar:  download_dir = 'C:\Users\anda\Downloads'
+#
+# Kalau salah, errornya menunjuk kolom yang salah dan blamed syntax, padahal
+# baris itu syntax-nya memang benar -- masalahnya backslash-nya.
+download_dir = 'C:\Users\anda\Downloads'
+
+# Kode saham, sebagai teks atau daftar. Ditimpa sepenuhnya oleh --stocks,
+# bukan digabung, jadi Anda bisa mempersempit run tanpa mengubah file ini.
+# stocks = ["NCKL", "BBCA"]
+
+# Alternatifnya, baca dari dump SQL atau CSV. Baris dengan flag delisted
+# dilewati. Bisa dipakai bersama `stocks` di atas; keduanya digabung.
+# stocks_file = "db/list_saham.sql"
+
+# Tahun laporan. Harus 1990-2100: batas masuk akal, bukan pernyataan tentang
+# apa yang IDX terbit. Tanpa ini, `year = 20255` akan diterima dan run-nya
+# hanya mengunduh nol file, yang terlihat sama persis dengan "sudah terunduh".
+year = 2025
+
+# Kuartal 1-4. Diabaikan kalau all_detected = true.
+# quarter = 4
+
+# Unduh semua link inlineXBRL.zip yang terdeteksi untuk tahun tersebut, bukan
+# hanya satu kuartal. Gunakan bersama --dry-run lebih dulu untuk melihat
+# apa yang akan diambil halaman.
+all_detected = true
+
+# Jeda antar saham dalam detik. Minimal 1. Aturan ini berlaku sama di file
+# dan di command line -- batasnya ada karena halaman IDX, bukan karena CLI.
+delay = 3.0
+
+# Tulis laporan JSON run ke sini. Tidak pernah bercampur dengan output
+# progress, jadi bisa dibaca scheduler selagi run masih berjalan.
+# report = "logs/run-report.json"
+
+# Deteksi saja: tampilkan apa yang akan diunduh atau dilewati, lalu berhenti.
+# Tidak menulis file dan tidak mengubah history.
+# dry_run = true
+
+# Yang TIDAK bisa diisi di sini, dan kenapa:
+#
+#   history     Menulis ulang history JSON. Perintah perbaikan yang harus
+#               diketik saat Anda memaksudkannya, bukan dibaca diam-diam oleh
+#               task terjadwal setiap malam.
+#   all_quarters  Alias lama dari all_detected. Dua nama untuk satu keputusan
+#                 di dalam satu file, dan tidak ada yang menang kalau keduanya
+#                 diisi.

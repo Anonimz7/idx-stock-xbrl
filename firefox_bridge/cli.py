@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from firefox_bridge import runconfig
 from firefox_bridge.client import FirefoxBridgeClient, FirefoxBridgeClientError
 from firefox_bridge.downloader.audit import rebuild_history, verify_history
 from firefox_bridge.downloader.errors import (
@@ -60,7 +61,7 @@ from firefox_bridge.progress import detail, notice, problem, progress
 from firefox_bridge.stocksource import StockListError, read_stock_list
 from firefox_bridge.validation import ValidationError, normalize_stock_code
 
-DEFAULT_STOCK_DELAY_SECONDS = 3.0
+DEFAULT_STOCK_DELAY_SECONDS = runconfig.DEFAULT_DELAY_SECONDS
 EXIT_SUCCESS = 0
 EXIT_FAILURES = 1
 EXIT_INVALID_INPUT = 2
@@ -68,11 +69,37 @@ EXIT_INVALID_INPUT = 2
 EXIT_BRIDGE_UNAVAILABLE = 3
 
 
+def _year_argument(value: str) -> int:
+    """argparse type for `--year`, sharing the config file's rule."""
+    try:
+        return runconfig.parse_year(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def _quarter_argument(value: str) -> int:
+    """argparse type for `--quarter`, sharing the config file's rule."""
+    try:
+        return runconfig.parse_quarter(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Return the argument parser for the downloader CLI."""
     parser = argparse.ArgumentParser(
         prog="firefox-bridge-download",
         description="Bulk download IDX inlineXBRL.zip reports",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help=(
+            "TOML or JSON file supplying the options below. Explicit wins over "
+            "$FIREFOX_BRIDGE_CONFIG, which wins over a firefox-bridge.toml in the "
+            "working directory. Any option given here overrides the file."
+        ),
     )
     parser.add_argument(
         "--stocks",
@@ -92,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
+        default=None,
         help=(
             "Detect what would be downloaded or skipped for each stock, and stop "
             "there. Writes no file and changes no history. The browser is still "
@@ -107,28 +135,34 @@ def build_parser() -> argparse.ArgumentParser:
             "whose delisted flag is set. Merged with --stocks when both are given."
         ),
     )
-    parser.add_argument("--year", type=int, default=2025, help="Reporting year")
+    parser.add_argument(
+        "--year",
+        type=_year_argument,
+        default=None,
+        help=f"Reporting year ({runconfig.MIN_YEAR}-{runconfig.MAX_YEAR})",
+    )
     parser.add_argument(
         "--quarter",
-        type=int,
-        default=4,
-        choices=[1, 2, 3, 4],
+        type=_quarter_argument,
+        default=None,
         help="Reporting quarter (1-4). Ignored when --all-detected is set",
     )
     parser.add_argument(
         "--all-quarters",
         action="store_true",
+        default=None,
         help="Legacy alias for --all-detected",
     )
     parser.add_argument(
         "--all-detected",
         action="store_true",
+        default=None,
         help="Download every recognized inlineXBRL.zip link detected for the year",
     )
     parser.add_argument(
         "--delay",
         type=minimum_one_second,
-        default=DEFAULT_STOCK_DELAY_SECONDS,
+        default=None,
         help="Delay between stocks in seconds (minimum 1)",
     )
     parser.add_argument(
@@ -400,11 +434,17 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _command_block(args: argparse.Namespace, stock_codes: list[str]) -> dict[str, Any]:
+def _command_block(
+    args: argparse.Namespace,
+    stock_codes: list[str],
+    resolution: runconfig.Resolution,
+) -> dict[str, Any]:
     """Record what was asked for, so a report is self-describing.
 
     A report that says what succeeded but not what was requested cannot answer
-    "was this supposed to include BBCA?".
+    "was this supposed to include BBCA?". Including the config file and which
+    keys it supplied answers the harder version of that question -- "why did this
+    run use 2024 when I always pass 2025 on the command line".
     """
     return {
         "stocks": stock_codes,
@@ -413,6 +453,12 @@ def _command_block(args: argparse.Namespace, stock_codes: list[str]) -> dict[str
         "all_detected": bool(args.all_detected or args.all_quarters),
         "delay": args.delay,
         "mode": "history" if args.history else "download",
+        "config": {
+            "path": str(resolution.path) if resolution.path else None,
+            "from_file": list(resolution.from_file),
+            "from_cli": list(resolution.from_cli),
+            "from_default": list(resolution.from_default),
+        },
     }
 
 
@@ -462,6 +508,22 @@ def _write_report(
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     args = build_parser().parse_args(argv)
+
+    # Before anything reads an option. The precedence has to be settled once,
+    # here, so that every later branch -- history, dry run, download -- is
+    # working from the same resolved values rather than re-deriving them.
+    try:
+        resolution = runconfig.resolve(args, args.config)
+    except runconfig.ConfigError as error:
+        problem(f"Config tidak valid: {error}")
+        return EXIT_INVALID_INPUT
+    if resolution.path is not None:
+        # On the terminal, not only in the log file. A config file can change
+        # what a run does without anyone passing an argument, so the one thing
+        # that must never happen is for that to be invisible. `detail` alone
+        # would log it and print nothing. Silent when there is no file, because
+        # that is the ordinary case.
+        progress(runconfig.describe(resolution), config=str(resolution.path))
 
     if args.history is not None:
         return _run_history_command(args.history, args.download_dir)
@@ -521,7 +583,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 summary=summary,
                 failures=failures,
                 started_at=started_at,
-                command=_command_block(args, stock_codes),
+                command=_command_block(args, stock_codes, resolution),
                 environment={
                     "extension_version": version,
                     "download_dir": str(download_root(download_dir)),

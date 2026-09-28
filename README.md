@@ -125,12 +125,58 @@ Useful options:
 | `--all-quarters` | Legacy alias for `--all-detected`. |
 | `--delay` | Seconds between stocks. Values below 1 are rejected. |
 | `--download-dir` | Download root. Default `%FIREFOX_BRIDGE_DOWNLOAD_DIR` or `~/Downloads`. |
+| `--config` | TOML or JSON file supplying any option below. See [Config file](#config-file). |
 
 The equivalent module form keeps working for existing scripts:
 
 ```powershell
 .\.venv\Scripts\python.exe -m firefox_bridge.tools.bulk_downloader --stocks NCKL --year 2025 --all-detected
 ```
+
+## Config file
+
+Options that a scheduled run keeps repeating can live in a TOML or JSON file
+instead of on the command line. Start from `firefox-bridge.example.toml`.
+
+```powershell
+# a firefox-bridge.toml in the working directory is found automatically
+.\.venv\Scripts\firefox-bridge-download.exe --dry-run
+
+# or point at one explicitly
+.\.venv\Scripts\firefox-bridge-download.exe --config C:\schedules\weekly.toml
+```
+
+Precedence, highest first: **command line, then the file, then the built-in
+default.** Every argument still wins, so one command can override the file for a
+single run without editing it.
+
+| Where the file comes from | Order |
+| --- | --- |
+| `--config PATH` | 1 |
+| `$FIREFOX_BRIDGE_CONFIG` | 2 |
+| `firefox-bridge.toml` in the working directory | 3 |
+| built-in defaults | 4 |
+
+A file named explicitly has to exist; one merely discovered may be absent.
+
+The run prints which file it used and which options that file actually
+supplied, so a file cannot quietly change what a run does. An unknown key, a
+value of the wrong type, and a `delay` under one second are all refused before
+the browser is touched, each naming the file and the key.
+
+Two Windows notes, both learned the hard way:
+
+- Save as UTF-8 **with or without** a byte-order mark. A BOM is stripped, because
+  Notepad, PowerShell and Visual Studio all add one and `tomllib` rejects it
+  with an error that blames line 1.
+- Write Windows paths in single quotes: `download_dir = 'C:\Users\anda\Downloads'`.
+  In double quotes a backslash starts an escape, and the error points at a
+  column rather than at the backslash.
+
+`history` and `all_quarters` cannot be set in a file. `history = "rebuild"`
+would rewrite the history JSON on every unattended run, and an alias that
+duplicates `all_detected` would put the run in a state with two names for one
+decision.
 
 ## The flow
 

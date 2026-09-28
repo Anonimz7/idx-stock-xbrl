@@ -23,12 +23,30 @@ def wait_before_step(message: str, **fields: object) -> None:
     time.sleep(STEP_DELAY_SECONDS)
 
 
+def parse_delay(value: object) -> float:
+    """Return a usable delay in seconds, or raise ``ValueError``.
+
+    Shared by the ``--delay`` argument and the config file, on purpose. The
+    one-second minimum exists because the IDX front end mis-handles a fast click
+    sequence, so it has to hold no matter where the number came from -- a rule
+    enforced on only one of the two paths is a rule that will eventually be
+    bypassed through the other one.
+
+    ``str(value)`` rather than a bare ``float(value)`` so a boolean is rejected
+    by the same numeric parse rather than quietly becoming 1.0.
+    """
+    try:
+        seconds = float(str(value))
+    except (TypeError, ValueError) as error:
+        raise ValueError("delay harus berupa angka") from error
+    if seconds < MINIMUM_STEP_DELAY_SECONDS:
+        raise ValueError(f"delay minimal {MINIMUM_STEP_DELAY_SECONDS:.0f} detik")
+    return seconds
+
+
 def minimum_one_second(value: str) -> float:
     """argparse type that rejects any delay below the safe minimum."""
     try:
-        seconds = float(value)
+        return parse_delay(value)
     except ValueError as error:
-        raise argparse.ArgumentTypeError("delay harus berupa angka") from error
-    if seconds < MINIMUM_STEP_DELAY_SECONDS:
-        raise argparse.ArgumentTypeError("delay minimal 1 detik")
-    return seconds
+        raise argparse.ArgumentTypeError(str(error)) from error

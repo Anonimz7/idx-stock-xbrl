@@ -337,7 +337,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | SEC-006 | selesai | `tests/test_secret_redaction.py`: unduhan penuh tidak menulis token ke log/JSON/console, plus cek statis bahwa token tidak pernah masuk emitter |
 | CLI-001 | selesai | `firefox-bridge-download` terpasang dari `pyproject.toml` |
 | CLI-002 | berjalan | Exit code 0/1/2 ada; kode 3 untuk bridge gagal belum |
-| CLI-003 | belum | Config file belum |
+| CLI-003 | selesai | `firefox_bridge/runconfig.py`: file TOML/JSON, ditemukan dari `--config` > `$FIREFOX_BRIDGE_CONFIG` > `firefox-bridge.toml` di working directory. Precedence CLI > file > default, dijalankan sekali di awal `run()`; argumen menimpa file, bukan digabung. Key tak dikenal, tipe salah, dan `delay` < 1 detik ditolak sebelum browser disentuh, semua pesan menyebut file dan key. Baris "config: <path> (kunci)" dicetak ke terminal, bukan hanya ke log |
 | CLI-004 | berjalan | `--stocks` ada; `--stocks-file` belum |
 | CLI-005 | berjalan | Skip otomatis ada; flag `--resume` belum eksplisit |
 | CLI-006 | selesai | `downloader/planning.py` + `--dry-run`: keputusan skip/fetch dipindah ke `plan_for()` yang dipakai bersama oleh kedua jalur, jadi dry-run tidak bisa menyimpang dari kenyataan |
@@ -1569,6 +1569,63 @@ bekerja sambil melakukan sesuatu yang lain.
 
 Gate: 388 pytest, ruff, mypy 38 file, web-ext 0/0/0, build succeed, shim OK,
 coverage 86%.
+
+### CLI-003: config file (P0 terakhir)
+
+Dengan ini **tidak ada lagi item P0 berstatus `belum`**.
+
+`firefox_bridge/runconfig.py`. Precedence: **command line > file > default**,
+diselesaikan sekali di awal `run()` supaya setiap cabang berikutnya — history,
+dry run, download — bekerja dari nilai yang sama.
+
+#### Dua keputusan yang terlihat seperti kelalaian
+
+`history` tidak bisa diisi dari file. `history = "rebuild"` akan menulis ulang
+history JSON pada setiap run terjadwal yang tidak diawasi, dan itu perintah
+perbaikan yang harus diketik ketika memang dimaksudkan.
+
+`all_quarters` juga tidak. Ia alias lama dari `all_detected`; membolehkan file
+mengisinya berarti satu keputusan punya dua nama di dalam satu file, dan tidak
+ada yang menang kalau keduanya diisi.
+
+#### Aturan tidak bisa dilanggar lewat file
+
+`delay = 0.4` di file ditolak dengan pesan yang sama seperti `--delay 0.4`.
+Batas 1 detik ada karena halaman IDX, bukan karena CLI; aturan yang hanya
+dijalankan di salah satu jalur adalah aturan yang pada akhirnya akan dilewati
+lewat jalur yang lain. `year` sekarang juga dibatasi 1990–2100, dan batasnya
+dipakai bersama oleh file dan command line: `year = 20255` dulu diterima lalu
+mengunduh nol file, yang terlihat sama persis dengan "sudah terunduh".
+
+#### Dua cacat yang ditemukan, satu hanya lewat uji nyata
+
+**BOM ditolak `tomllib`.** Config yang ditulis PowerShell, Notepad, atau Visual
+Studio semuanya memakai byte-order mark di Windows, dan `tomllib` menolaknya
+dengan `Invalid statement (at line 1, column 1)` — error yang menyalahkan kolom
+pertama dari baris yang syntax-nya memang benar, sehingga pembaca mencari
+kesalahan syntax yang tidak ada. **Ini tidak akan pernah ketahuan oleh test**,
+karus test menulis file-nya sendiri dengan encoding yang benar. Baru ketahuan
+saat menjalankan CLI sungguhan dengan file yang ditulis PowerShell. Sekarang
+dibaca sebagai `utf-8-sig`.
+
+**`detail()` tidak mencetak ke terminal.** Baris config awalnya hanya masuk ke
+log file. Padahal file config bisa mengubah jalannya run tanpa ada yang
+mengetik argumen, jadi hal yang paling tidak boleh terjadi adalah itu tidak
+tampak. Sekarang ke stdout, dan hanya ketika memang ada file yang dipakai.
+
+#### Yang diverifikasi
+
+`--config` eksplisit, `$FIREFOX_BRIDGE_CONFIG`, dan penemuan otomatis diuji
+semuanya dari CLI sungguhan, termasuk dari instalasi wheel di venv bersih.
+`stocks` dari file tetap melewati validasi kode saham (choke point di
+`paths.py` tidak peduli dari mana asalnya), dan test mengunci itu.
+
+`firefox-bridge.example.toml` ikut di-commit dan **diuji bisa dimuat** — contoh
+yang sudah tidak bisa di-parse lebih buruk daripada tidak ada, dan tidak pernah
+dijalankan manual sehingga akan membusuk diam-diam.
+
+Gate: 431 pytest, ruff, mypy 39 file, web-ext 0/0/0, build succeed, wheel teruji
+dari venv bersih, `runconfig.py` 100% coverage, total paket 88% (dari 86%).
 
 
 ### Pembersihan root `project02` dan status `browser-bridge`
