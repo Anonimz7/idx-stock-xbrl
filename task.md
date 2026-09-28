@@ -225,15 +225,20 @@ dan tidak dipakai ulang di lingkungan lain.
 ## 8. Kriteria Done Fase pertama
 
 - Mesin Windows baru dapat menjalankan `firefox-bridge-download` dari source/venv.
-- 1 NCKL + minimal 10 stock lain selesai untuk satu tahun.
-- T1–T4 untuk tahun yang sama ditemukan.
-- Run kedua mengunduh 0 file valid.
-- Hash diverifikasi dan duplicate ditandai.
-- Kill process di tengah run, lalu resume, tidak menghasilkan file corrupt atau JSON rusak.
-- Extension disconnect menghasilkan exit code dan pesan yang jelas.
-- Token tidak ditemukan pada log, history, atau run report.
-- `pytest`, coverage, Ruff, type checker, `web-ext lint`, dan package build lulus.
-- README menjelaskan instalasi, konfigurasi, resume, dan troubleshooting.
+Status tiap kriteria, diverifikasi bukan Planning:
+
+| Kriteria | Status | Bukti / yang kurang |
+| --- | --- | --- |
+| Mesin Windows baru menjalankan `firefox-bridge-download` dari source/venv | teruji | Wheel dipasang ke venv kosong, 14 modul diimpor, 3 console script jalan, `history verify` 52 ok. Tidak ada mesin Windows fisik yang bersih, jadi ini proksi yang kuat, bukan bukti harfiah |
+| 1 NCKL + minimal 10 stock lain | **terlampaui** | NCKL + 12; 13 saham, 52 report, 11 MB |
+| T1–T4 untuk tahun yang sama | teruji | 52 report mencakup T1–T4 tiap emiten |
+| **Run kedua mengunduh 0 file valid** | **BELUM** | Run 13 saham adalah run pertama. Tidak ada run kedua yang pernah dijalankan, jadi jalur skip pada data nyata belum diukur. Lihat §14 |
+| Hash diverifikasi dan duplicate ditandai | teruji | `history verify`: 52 ok, 0 bermasalah, 0 orphan, 0 duplikat |
+| **Kill process di tengah run, lalu resume** | **BELUM** | Prasyaratnya sudah ada (`STEP 0` scan staging, `discard_staged()`), tapi prosesnya belum pernah dibunuh di tengah unduhan nyata. Lihat §14 |
+| Extension disconnect menghasilkan exit code dan pesan jelas | teruji | Exit 3 dari health gate `STEP 0.5` |
+| Token tidak ditemukan di log/history/report | teruji | `tests/test_secret_redaction.py` + scan statis seluruh riwayat git |
+| `pytest`, coverage, Ruff, type checker, `web-ext lint`, package build | teruji | 431 pytest, ruff bersih, mypy 39 file, web-ext 0/0/0, build succeed, coverage 88% |
+| README menjelaskan instalasi, konfigurasi, resume, troubleshooting | teruji | Termasuk bagian config file (CLI-003) |
 
 ## 9. Di Luar Scope Fase Pertama
 
@@ -320,7 +325,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | CORE-003 | berjalan | `ReportLink`, `ReportTarget`, `DownloadResult`, `DownloadRecord`, `RunSummary` sudah typed; `dict` longgar masih dipakai di batas snapshot |
 | CORE-004 | selesai | `downloader/errors.py`: `ExtensionDisconnected` (fatal), `StaleReference`, `DownloadTimeout`, `IntegrityError`; CLI menerjemahkan kegagalan transport ke taksonomi dan mencantumkan nama tipenya di pesan |
 | CORE-005 | selesai | `downloader/retry.py`: backoff eksponensial 1s/2s/4s (cap 30s), 3 percobaan; hanya `StaleReference`/`DownloadTimeout`/`IntegrityError`; `discard_staged()` jadi pagar idempotensi sebelum tiap retry; `move` dan tulis JSON **tidak** ikut di-retry |
-| CORE-006 | berjalan | `pacing.py` terpusat; `--delay` masih hardcoded default 3 detik di CLI |
+| CORE-006 | selesai | `pacing.py` terpusat; `parse_delay()` jadi satu aturan dan dipakai bersama oleh `--delay` dan config file, jadi batas 1 detik berlaku di kedua jalur. Default 3 detik pindah ke `runconfig.DEFAULTS` |
 | CORE-007 | selesai | `downloader/health.py`: `ensure_extension_ready()` dijalankan sebagai STEP 0.5 sebelum workflow browser; kegagalan keluar sebagai exit 3 tanpa membuka tab |
 | DATA-001 | berjalan | Skema v1 tetap; migration belum ada |
 | DATA-002 | berjalan | Atomic write sudah ada; lock file belum |
@@ -336,20 +341,20 @@ temporary add-on yang dimuat ulang tiap restart.
 | SEC-005 | selesai | `validate_archive` memeriksa ukuran, signature ZIP, end-of-central-directory, keterbacaan, jumlah entri, dan rasio kompresi; dijalankan di staging sebelum file dipindah |
 | SEC-006 | selesai | `tests/test_secret_redaction.py`: unduhan penuh tidak menulis token ke log/JSON/console, plus cek statis bahwa token tidak pernah masuk emitter |
 | CLI-001 | selesai | `firefox-bridge-download` terpasang dari `pyproject.toml` |
-| CLI-002 | berjalan | Exit code 0/1/2 ada; kode 3 untuk bridge gagal belum |
+| CLI-002 | selesai | Exit code 0/1/2/3. Kode 3 (bridge/extension gagal) sudah diproduksi health gate `STEP 0.5` dan diuji di 4 file test |
 | CLI-003 | selesai | `firefox_bridge/runconfig.py`: file TOML/JSON, ditemukan dari `--config` > `$FIREFOX_BRIDGE_CONFIG` > `firefox-bridge.toml` di working directory. Precedence CLI > file > default, dijalankan sekali di awal `run()`; argumen menimpa file, bukan digabung. Key tak dikenal, tipe salah, dan `delay` < 1 detik ditolak sebelum browser disentuh, semua pesan menyebut file dan key. Baris "config: <path> (kunci)" dicetak ke terminal, bukan hanya ke log |
-| CLI-004 | berjalan | `--stocks` ada; `--stocks-file` belum |
+| CLI-004 | selesai | `--stocks` dan `--stocks-file` (SQL dump / CSV, baris delisted dilewati), keduanya bisa digabung dan keduanya bisa datang dari config file |
 | CLI-005 | berjalan | Skip otomatis ada; flag `--resume` belum eksplisit |
 | CLI-006 | selesai | `downloader/planning.py` + `--dry-run`: keputusan skip/fetch dipindah ke `plan_for()` yang dipakai bersama oleh kedua jalur, jadi dry-run tidak bisa menyimpang dari kenyataan |
 | CLI-007 | selesai | `--report PATH` menulis JSON run report berversi; ditulis atomik, di semua exit path termasuk saat run gagal, dan tidak pernah tercampur ke output progress |
 | CLI-008 | berjalan | Noninteraktif sudah; belum ada flag eksplisit |
 | QA-001 | selesai | 10 file test: pacing, selector, parser, flow, history, orchestrator, CLI, regresi IDX, kontrak extension, bridge/client/config |
-| QA-002 | berjalan | `idx/` 89–100% dan `downloader/` 85–100% sudah melewati target 85%; total paket naik ke 78% karena `mcp_server.py` dan `server.py` belum diuji |
+| QA-002 | berjalan | `idx/` 89-100% dan `downloader/` 85-100% sudah melewati target 85%; total paket **88%** setelah config file masuk, tapi `mcp_server.py` dan `server.py` masih 0% |
+| QA-006 | selesai | E2E live NCKL 2025 dari `productions` sudah dijalankan, dan setelah itu 13 saham / 52 report terverifikasi bersih |
 | QA-003 | selesai | `ruff check .` lulus bersih, 0 error |
-| QA-004 | selesai | `mypy` lulus, 28 source file tanpa isu |
-| QA-005 | selesai | `web-ext lint` 0 error, 0 warning, 0 notice pada versi 0.1.6; `node --check` lulus untuk 3 file JS |
-| QA-006 | tertunda | Perlu E2E live NCKL 2025 dari `productions` |
-| QA-007 | berjalan | Kontrak extension sudah dijaga test; fault injection jaringan belum |
+| QA-004 | selesai | `mypy` lulus, 39 source file tanpa isu |
+| QA-005 | selesai | `web-ext lint` 0 error, 0 warning, 0 notice; `node --check` lulus untuk 3 file JS |
+| QA-007 | berjalan | Kontrak extension dan cold start sudah dijaga test; fault injection jaringan (timeout HTTP, socket putus di tengah unduhan) belum |
 | SRC-001 | belum | Skema tabel `saham` belum ditentukan |
 | SRC-002 | belum | Konfigurasi koneksi belum ada |
 | SRC-003 | belum | `StockListProvider` belum ada |
@@ -1558,7 +1563,7 @@ level mana yang harus diberi, dan pustaka yang ada tapi kosong diberi catatan
 
 Dua modul 0% yang tersisa dicatat, bukan disembunyikan. `mcp_server.py`
 adalah adapter MCP yang **sudah dipakai** (tool `firefox-bridge` di sesi ini
-berjalan darinya) tetapi belum punya test. Itu gap>Paling явно, dan kandidat
+berjalan darinya) tetapi belum punya test. Itu gap yang paling jelas, dan kandidat
 pekerjaan berikutnya.
 
 Shim yang 0% sekarang punya test: ia harus benar-benar menjalankan program yang
@@ -1672,3 +1677,57 @@ Copy-Item C:\Users\ORCA\Downloads\project02\opencode.json.bak C:\Users\ORCA\Down
 Setelah restart dan tool `firefox-bridge` terbukti berfungsi, `browser-bridge`
 (89 MB) baru aman dihapus. Bridge server di `127.0.0.1:8765` ikut mati karena
 dihentikan pada sesi sebelumnya, jadi harus dinyalakan lagi.
+
+## 14. Lanjut Sesi Berikutnya
+
+Semua item P0 sudah `selesai` atau `berjalan`; tidak ada lagi berstatus `belum`
+kecuali SRC-001 sampai SRC-011, yang memang fase 2 (MariaDB) dan belum disentuh
+sengaja. Sesi berikutnya sebaiknya **menutup dua kriteria §8 yang masih BELUM**,
+karena keduanya satu-satunya klaim "production-ready" yang belum pernah diukur,
+dan keduanya bisa menguji jalur yang paling merusak data.
+
+### 14.1 Run kedua harus mengunduh 0 file (pertama, karena murah dan informatif)
+
+Ini sekaligus menguji skip, integritas hash, dan deduplikasi terhadap 52 file
+nyata, bukan fixture. Yang diukur, bukan diasumsikan:
+
+1. Pastikan bridge hidup dan extension Connect.
+2. Jalankan run yang sama persis dengan run 13 saham.
+3. Yang diharapkan: `52 skipped`, `0 downloaded`, exit 0.
+4. Lalu `history verify` -> harus tetap 52 ok, 0 bermasalah, dan **tidak ada
+   duplikat baru** yang muncul karena file yang sama terunduh dua kali.
+5. Periksa ukuran file sebelum dan sesudah. Run kedua yang menulis ulang file
+   akan mengubah ukurannya; itu bukti langsung bahwa skip tidak bekerja.
+
+Kalau ternyata muncul unduhan, jangan langsung "diperbaiki" — catat dulu saham
+dan kuartal mana yang lolos, karena itu berarti keputusan skip di `planning.py`
+tidak sama dengan kenyataan, dan itu bug yang harus dibaca, bukan ditembak.
+
+### 14.2 Kill di tengah run, lalu resume
+
+Prasyaratnya sudah ada: `STEP 0` memindai staging dan membuang sisa basi, dan
+`discard_staged()` jadi pagar idempotensi sebelum tiap retry. Yang belum pernah
+dilakukan adalah membunuh prosesnya.
+
+1. Pilih satu emiten yang masih punya report TW2/TW3 yang belum ada, supaya
+   ada kerja nyata yang bisa terpotong.
+2. Jalankan run, lalu `Stop-Process` pada `firefox-bridge-download` **saat satu
+   unduhan berjalan**, bukan sebelum atau sesudah.
+3. Pastikan ada file parsial di `saham/staging/` sebelum langkah berikutnya.
+4. Jalankan run yang sama lagi.
+5. Yang diharapkan: exit 0, file yang selesai terpotong **diunduh ulang**
+   (bukan dianggap sah), file yang sudah utuh **tidak** diunduh ulang, dan
+   `history verify` bersih.
+6. Yang harus diperiksa: tidak ada file parsial yang lolos ke folder final, dan
+   JSON history tidak rusak (bisa dibaca `history verify` tanpa error).
+
+Kalau file parsial ternyata lolos ke folder final, itu temuan severity tinggi
+dan harus masuk `validation.validate_archive`, bukan diselesaikan dengan
+membuang file secara manual.
+
+### 14.3 Setelah itu
+
+- `mcp_server.py` masih 0% coverage padahal adapter MCP-nya aktif dipakai.
+- Fault injection jaringan untuk QA-007 (timeout HTTP, socket terputus di tengah
+  unduhan) belum ada.
+- SRC-001 sampai SRC-011 (MariaDB) — fase 2, masuk hanya kalau memang diminta.

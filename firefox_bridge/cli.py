@@ -62,6 +62,10 @@ from firefox_bridge.stocksource import StockListError, read_stock_list
 from firefox_bridge.validation import ValidationError, normalize_stock_code
 
 DEFAULT_STOCK_DELAY_SECONDS = runconfig.DEFAULT_DELAY_SECONDS
+"""Kept only so an existing ``from ...cli import DEFAULT_STOCK_DELAY_SECONDS``
+keeps working. The value itself now lives in :mod:`runconfig`, next to the other
+run defaults and the rule that validates them."""
+
 EXIT_SUCCESS = 0
 EXIT_FAILURES = 1
 EXIT_INVALID_INPUT = 2
