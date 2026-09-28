@@ -328,7 +328,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | DATA-004 | belum | Status report belum ada di JSON |
 | DATA-005 | selesai | Hash dicek sebelum skip dan mismatch memicu unduhan ulang |
 | DATA-006 | selesai | `duplicate_of` diisi dan duplikat dicetak |
-| DATA-007 | belum | Perintah `history verify/rebuild` belum ada |
+| DATA-007 | selesai | `downloader/audit.py` + `--history verify\|rebuild`: audit dua arah, termasuk mendeteksi **orphan** (arsip ada, JSON tidak); rebuild mempertahankan URL yang sudah diketahui |
 | SEC-001 | berjalan | Token di luar project; rotasi dan permission belum |
 | SEC-002 | berjalan | Bind loopback sudah ada; enforcement belum |
 | SEC-003 | selesai | `normalize_stock_code` menolak non-alfanumerik, `..`, separator, nama device Windows, dan kode >10 karakter; dipasang di CLI (exit 2 sebelum browser dibuka) **dan** di `paths.py` sebagai choke point |
@@ -1200,6 +1200,94 @@ bukan diam-diam di folder orang.
 | `test_a_cli_run_without_download_dir_stays_inside_the_suite` | Root suite bukan folder Downloads |
 
 Gate: 276 pytest (dari 253), ruff, mypy 34 file.
+
+### DATA-007 — `history verify` dan `history rebuild` (LULUS)
+
+Dipilih karena inilah yang membuat kriteria "10 saham" bisa dipercaya: setelah 40
+arsip terunduh, orang perlu cara memverifikasi semuanya tanpa mengunduh ulang.
+
+```
+firefox-bridge-download --history verify
+firefox-bridge-download --history rebuild
+```
+
+Keduanya offline: tanpa browser, tanpa bridge, tanpa pacing. Itu disengaja —
+`verify` adalah alat yang justru Anda pakai **karena** tidak memercayai
+keadaan saat ini, jadi ia tidak boleh bergantung pada keadaan itu.
+
+#### Audit dua arah, dan arah yang mudah terlewat
+
+History adalah kesepakatan dua pihak: JSON mengatakan file ada, dan file benar-benar
+ada dengan hash cocok. Salah satu bisa menyimpang. Tapi yang mudah terlewat adalah
+arah kedua — **arsip yang sudah dipindah tapi catatannya belum tertulis**, yaitu
+persis yang meninggalkan run yang dibunuh di antara `move` dan tulis JSON.
+
+Mencari hanya masalah yang sudah diketahui history akan melewatkan file-file itu, dan run
+berikutnya mengunduh semuanya lagi tanpa alasan. Jadi `verify` melaporkan
+**orphan** juga.
+
+| Status | Arti |
+| --- | --- |
+| `OK` | File ada, hash cocok, arsip terbaca |
+| `MISSING` | JSON mencatat, file tidak ada di disk |
+| `MISMATCH` | File ada, hash tidak cocok dengan JSON |
+| `CORRUPT` | Hash cocok, tapi isinya bukan arsip yang bisa dibaca |
+| `ORPHAN` | File ada di disk, tidak tercatat di JSON |
+
+Orphan **tidak** membuat laporan `unhealthy`: arsip yang belum tercatat adalah
+sesuatu untuk diadopsi, bukan arsip yang rusak. `verify` keluar `1` hanya kalau ada
+masalah sungguhan.
+
+#### `rebuild` adalah perbaikan, bukan reset
+
+Ini cacat desain yang saya temukan sendiri saat menguji di data nyata. Versi
+pertama membangun ulang JSON **dari nol**, sehingga URL yang sudah diketahui di
+semua entri ikut hilang. Itu reset yang memakai nama alat perbaikan — dan URL
+adalah satu-satunya hal yang tidak bisa direkonstruksi dari nama file.
+
+Perbaikannya: `rebuild_history` menerima `existing` dan mempertahankan URL serta
+`completed_at` yang sudah tercatat. Verified pada data nyata dengan entri TW2
+dihapus dari JSON:
+
+```
+TW1: recovered=True   url=https://www.idx.co.id/Portals/0/StaticData/L...
+TW2: recovered=False  url=None
+TW3: recovered=True   url=https://www.idx.co.id/Portals/0/StaticData/L...
+TW4: recovered=True   url=https://www.idx.co.id/Portals/0/StaticData/L...
+```
+
+TW2 yang benar-benar hilang dari JSON tetap `None` dengan `url_recovered: false` —
+lubang yang jujur, bukan tebakan yang terlihat meyakinkan. Run berikutnya akan
+mengisinya. Sha256 TW2 yang pulih cocok dengan hash aslinya.
+
+`rebuild` juga menolak menulis JSON sama sekali kalau ada arsip yang tidak bisa
+dibaca, supaya file korup tidak ikut terekam.
+
+#### Kompatibilitas
+
+`--stocks` tidak lagi `required`, karena `--history` tidak butuh kode saham.
+Pemeriksaan dipindah ke `run()`: tanpa `--history` dan tanpa `--stocks`, keluar
+`2` dengan pesan yang menyebut keduanya. Kontrak lama
+`firefox-bridge-download --stocks NCKL ...` tetap berjalan tanpa perubahan.
+
+#### Tes yang menjaga
+
+| Pengaman | Yang dijaga |
+| --- | --- |
+| `test_a_deleted_file_is_reported_missing` | File hilang terdeteksi |
+| `test_a_modified_file_is_reported_as_a_mismatch` | Hash beda terdeteksi, kedua hash ditampilkan |
+| `test_a_file_matching_its_hash_but_not_a_zip_is_corrupt` | Hash benar pun arsip bisa korup |
+| `test_an_orphan_is_reported` | Arsip tanpa catatan terdeteksi |
+| `test_an_orphan_does_not_make_the_report_unhealthy` | Orphan bukan "sakit" |
+| `test_verify_writes_nothing` | `verify` benar-benar read-only |
+| `test_a_file_named_like_nothing_recognisable_is_ignored` | ZIP asing tidak dicatat di bawah kode tebakan |
+| `test_rebuild_keeps_urls_the_old_history_already_knew` | Rebuild bukan reset |
+| `test_rebuild_fills_the_gap_for_an_entry_the_history_never_knew` | Lubang jujur, bukan tebakan |
+| `test_a_rebuilt_history_verifies_cleanly` | Hasil rebuild yang `verify` setujui |
+| `test_history_verify_does_not_need_a_bridge` | Offline, tidak butuh extension |
+| `test_the_cli_still_requires_stocks_without_history` | Kontrak lama utuh |
+
+Gate: 299 pytest (dari 276), ruff, mypy 35 file.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 

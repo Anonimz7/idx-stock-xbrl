@@ -19,10 +19,13 @@ from pathlib import Path
 import httpx
 
 from firefox_bridge.client import FirefoxBridgeClient, FirefoxBridgeClientError
+from firefox_bridge.downloader.audit import rebuild_history, verify_history
 from firefox_bridge.downloader.errors import DownloaderError, ExtensionDisconnected
 from firefox_bridge.downloader.health import EXTENSION_UNAVAILABLE_STATUS, ensure_extension_ready
+from firefox_bridge.downloader.history import load_download_history, save_download_history
 from firefox_bridge.downloader.models import DownloadResult, RunSummary
 from firefox_bridge.downloader.orchestrator import download_all_detected, download_stock
+from firefox_bridge.downloader.paths import download_history_path
 from firefox_bridge.downloader.reporting import print_run_summary
 from firefox_bridge.downloader.staging import describe, scan_staging, staging_root
 from firefox_bridge.idx.link_parser import quarter_from_report_href
@@ -46,8 +49,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stocks",
-        required=True,
-        help="Comma-separated stock codes (e.g. NCKL,BBCA)",
+        default=None,
+        help="Comma-separated stock codes (e.g. NCKL,BBCA). Required unless --history is used.",
+    )
+    parser.add_argument(
+        "--history",
+        choices=("verify", "rebuild"),
+        default=None,
+        help=(
+            "Audit instead of download: 'verify' checks the history against the files "
+            "on disk and writes nothing; 'rebuild' reconstructs the history from the "
+            "archives that exist."
+        ),
     )
     parser.add_argument("--year", type=int, default=2025, help="Reporting year")
     parser.add_argument(
@@ -122,6 +135,78 @@ def _report_processed(
     )
 
 
+def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
+    """Run `history verify` or `history rebuild` and return its exit code.
+
+    Both are offline: no browser, no bridge, no pacing. `verify` is read-only by
+    construction, which is what makes it safe to run against a history you are
+    unsure of -- it is the tool you reach for *because* you do not trust the
+    state.
+    """
+    download_dir = Path(download_dir_arg) if download_dir_arg else None
+
+    if mode == "rebuild":
+        # Pass the current history so a repair keeps the URLs it already knows
+        # instead of throwing them away.
+        existing = load_download_history(download_dir) if download_history_path(
+            download_dir
+        ).exists() else None
+        history, report = rebuild_history(download_dir, existing)
+        for finding in report.findings:
+            progress(
+                f"  {finding.stock} {finding.year} TW{finding.quarter}: "
+                f"{finding.detail} ({finding.path})",
+                stock=finding.stock,
+                year=finding.year,
+                quarter=finding.quarter,
+                status=finding.status,
+            )
+        if report.problems:
+            problem(
+                f"rebuild dilewati: {len(report.problems)} arsip tidak valid, "
+                "history tidak ditulis"
+            )
+            return EXIT_FAILURES
+        path = save_download_history(history, download_dir)
+        progress(
+            f"HISTORY REBUILT: {len(report.findings)} entri -> {path}",
+            entries=len(report.findings),
+        )
+        unrecovered = [
+            item for item in report.findings if "dipertahankan" not in item.detail
+        ]
+        if unrecovered:
+            notice(
+                f"{len(unrecovered)} entri tanpa URL; run berikutnya akan melengkapinya",
+                unrecovered=len(unrecovered),
+            )
+        return EXIT_SUCCESS
+
+    history = load_download_history(download_dir)
+    report = verify_history(history, download_dir)
+    for finding in report.findings:
+        line = f"  {finding.status.upper():<9} {finding.stock} {finding.year} TW{finding.quarter}"
+        if finding.is_problem:
+            problem(f"{line}: {finding.detail}", stock=finding.stock, status=finding.status)
+        else:
+            progress(f"{line}: {finding.path}", stock=finding.stock, status=finding.status)
+
+    progress(
+        f"HISTORY VERIFY: {len(report.ok)} ok, {len(report.problems)} bermasalah, "
+        f"{len(report.orphans)} tanpa catatan",
+        ok=len(report.ok),
+        problems=len(report.problems),
+        orphans=len(report.orphans),
+    )
+    if report.orphans:
+        notice(
+            f"  {len(report.orphans)} file ada tapi belum tercatat; "
+            "jalankan --history rebuild untuk mencatatnya",
+            orphans=len(report.orphans),
+        )
+    return EXIT_FAILURES if report.problems else EXIT_SUCCESS
+
+
 def _as_downloader_error(error: Exception) -> DownloaderError:
     """Translate a failure into the taxonomy, or pass an existing member through.
 
@@ -148,6 +233,14 @@ def _as_downloader_error(error: Exception) -> DownloaderError:
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     args = build_parser().parse_args(argv)
+
+    if args.history is not None:
+        return _run_history_command(args.history, args.download_dir)
+
+    if args.stocks is None:
+        problem("No stock codes supplied. Gunakan --stocks, atau --history verify/rebuild.")
+        return EXIT_INVALID_INPUT
+
     try:
         stock_codes = parse_stock_codes(args.stocks)
     except argparse.ArgumentTypeError as error:
