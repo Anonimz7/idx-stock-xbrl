@@ -821,3 +821,48 @@ menyaring satu sesi.
 | `test_run_summary_reaches_the_log` | Summary masuk log, kegagalan berlevel `WARNING` |
 | `test_token_print_in_server_stays_a_plain_print` | `print(settings.token)` tidak pernah jadi record log |
 | `isolated_log_dir` (conftest) | `pytest` tidak pernah menyentuh log proyek |
+
+### Pembersihan root `project02` dan status `browser-bridge`
+
+`productions` sudah menjadi satu-satunya rumah. Penghapusan dilakukan berdasar
+ukuran, bukan asumsi: `productions` terbukti **superset** - `browser-bridge` tidak
+punya satu pun modul yang tidak dimiliki `productions`, dan satu-satunya file
+unik yang hilang bila dihapus adalah `tests/test_bulk_downloader.py`.
+
+| Item | Aksi | Bukti |
+| --- | --- | --- |
+| `.playwright-mcp` | dihapus | 3 artefak basi 25 Sep; server playwright `disabled: true` |
+| `Aggent` | dihapus | ketiga file SHA-256 identik dengan `.opencode\skills\agent-core\references` |
+| `.opencode` | disimpan | skill `agent-core` yang aktif memuat darinya |
+| `opencode.json` | disimpan | konfigurasi MCP hidup |
+| `browser-bridge` | **ditunda** | masih ditunjuk `opencode.json` dan 1 proses masih jalan |
+
+`Aggent` bisa dipastikan redundan karena `.opencode` mengikuti layout standar
+`skills/<nama>/SKILL.md`, sedangkan `Aggent` tidak punya `skills/` maupun
+`SKILL.md` — jadi tidak mungkin menjadi sumber skill. Perbandingan isi memakai
+SHA-256, bukan perbandingan ukuran.
+
+#### Kenapa `browser-bridge` tidak bisa langsung dihapus
+
+Tidak karena isinya bermasalah, tapi karena `opencode.json` menunjuk `.venv` di
+sana untuk menjalankan MCP server. Menghapus folder yang sedang dipakai proses
+aktif berisiko meninggalkan file yang tidak terhapus dan tool mati.
+
+Yang dilakukan sebagai persiapan:
+
+1. Backup `opencode.json` → `opencode.json.bak`.
+2. `command` dan `cwd` dialihkan ke `productions`.
+3. **Command pengganti dibuktikan jalan** sebelum config disentuh: handshake MCP
+   `initialize` dijawab, 11 tool terdaftar, tidak ada yang hilang dibanding
+   katalog.
+4. JSON divalidasi ulang, dan kedua path dipastikan ada.
+
+Kalau ternyata ada yang tidak beres setelah restart, kembalikan dengan:
+
+```powershell
+Copy-Item C:\Users\ORCA\Downloads\project02\opencode.json.bak C:\Users\ORCA\Downloads\project02\opencode.json
+```
+
+Setelah restart dan tool `firefox-bridge` terbukti berfungsi, `browser-bridge`
+(89 MB) baru aman dihapus. Bridge server di `127.0.0.1:8765` ikut mati karena
+dihentikan pada sesi sebelumnya, jadi harus dinyalakan lagi.
