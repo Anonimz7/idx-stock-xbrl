@@ -20,9 +20,10 @@ from firefox_bridge.client import FirefoxBridgeClient
 from firefox_bridge.downloader.models import DownloadResult, RunSummary
 from firefox_bridge.downloader.orchestrator import download_all_detected, download_stock
 from firefox_bridge.downloader.reporting import print_run_summary
+from firefox_bridge.downloader.staging import describe, scan_staging, staging_root
 from firefox_bridge.idx.link_parser import quarter_from_report_href
 from firefox_bridge.pacing import minimum_one_second
-from firefox_bridge.progress import problem, progress
+from firefox_bridge.progress import notice, problem, progress
 from firefox_bridge.validation import ValidationError, normalize_stock_code
 
 DEFAULT_STOCK_DELAY_SECONDS = 3.0
@@ -131,6 +132,22 @@ def run(argv: Sequence[str] | None = None) -> int:
     download_dir = Path(args.download_dir) if args.download_dir else None
     client = FirefoxBridgeClient()
     summary = RunSummary()
+
+    # Before anything else: a run killed mid-download leaves a partial file at
+    # the exact path this run is about to download to, and the completion check
+    # would read that leftover as a finished file. Cleared up front, every
+    # download starts from a state we know.
+    scan = scan_staging(staging_root(download_dir))
+    progress(
+        f"STEP 0: {describe(scan)}",
+        examined=scan.examined,
+        removed=len(scan.removed),
+        in_flight=len(scan.kept_in_flight),
+    )
+    for path in scan.removed:
+        progress(f"  - dibuang: {path.name}", reason="stale staging")
+    for path in scan.kept_in_flight:
+        notice(f"  - dipertahankan (sedang diunduh): {path.name}", reason="in-flight")
 
     for stock in stock_codes:
         try:

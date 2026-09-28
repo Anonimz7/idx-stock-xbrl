@@ -324,7 +324,7 @@ temporary add-on yang dimuat ulang tiap restart.
 | CORE-007 | belum | Precheck connection belum ada di awal run |
 | DATA-001 | berjalan | Skema v1 tetap; migration belum ada |
 | DATA-002 | berjalan | Atomic write sudah ada; lock file belum |
-| DATA-003 | belum | Startup scan staging belum ada |
+| DATA-003 | selesai | `downloader/staging.py`: pindai `saham/staging/` di awal run (STEP 0), laporkan, lalu bersihkan file basi dan folder kosong; unduhan berjalan dipertahankan |
 | DATA-004 | belum | Status report belum ada di JSON |
 | DATA-005 | selesai | Hash dicek sebelum skip dan mismatch memicu unduhan ulang |
 | DATA-006 | selesai | `duplicate_of` diisi dan duplikat dicetak |
@@ -926,6 +926,92 @@ Jalur negatif diuji dari CLI dan semuanya keluar **sebelum** browser dibuka:
 | `test_the_token_subcommand_prints_without_writing_to_the_log` | Fitur baca-token tidak membuka log |
 
 Gate: 222 pytest (dari 160), ruff, mypy 30 file, node --check, web-ext 0/0/0.
+
+### DATA-003 — Scan staging di awal run (LULUS)
+
+Dipilih bukan karena urutannya di daftar, tapi karena dua hal. Pertama, ini prasyarat
+agar **retry (CORE-005) aman**: retry yang berjalan di atas file parsial yang
+tidak diketahui asalnya justru memperburuk — itulah cara data korup tercatat.
+Kedua, tanpa ini kriteria "kill di tengah run lalu resume" **tidak bisa diuji**,
+karena run berikutnya berinteraksi dengan puing-puing run sebelumnya.
+
+#### Bahaya yang diukur, bukan suspected
+
+Run yang dibunuh di tengah unduhan meninggalkan file parsial di staging pada
+path yang persis sama dengan tempat run berikutnya akan mengunduh — tanpa
+sibling `.crdownload`. Diperiksa langsung:
+
+```
+staged (partial) : 4100 byte, tanpa .crdownload
+is_download_complete(staged) = True
+wait_for_completed_download  -> 4100 byte dalam 1.0 detik
+HASIL: file partial yang tertinggal dianggap SELESAI
+```
+
+Logika `wait_for_completed_download` hanya mensyaratkan ukuran bertahan sama
+dua kali sampel — dan file yang tidak sedang ditulis **selalu** begitu. Yang
+menyelamatkan dari akibat terburuk adalah SEC-005: `validate_archive` menolak ZIP
+terpotong, jadi file korup tidak pernah tercatat. Tapi run tetap gagal dengan
+error yang membingungkan, dan file basinya tidak pernah hilang.
+
+#### Invarian yang menutupnya
+
+**Tidak ada yang ada di staging yang layak disimpan.** Arsip yang sudah selesai
+di sana belum pernah ditulis ke history, jadi membuangnya hanya installations satu
+unduhan ulang — dan menghilangkan kemungkinan file itu tertukar dengan file yang
+sedang diunduh.
+
+Pengecualian tunggal: unduhan yang benar-benar sedang berjalan. Firefox menyimpan
+sibling `.crdownload`/`.part` selama seluruh transfer, dan itulah sinyal untuk
+menyentirekan folder itu.
+
+#### Satu bug yang Guidelines test saya sendiri
+
+Versi pertama scan ikut **menghapus file `.crdownload` milik Firefox**. Saat
+iterasi sampai ke file temp itu, ia memeriksa apakah ada `.crdownload` dari
+`.crdownload` — yang tidak ada — lalu menganggapnya basi dan menghapusnya.
+Artinya unduhan milik proses lain bisa dibatalkan oleh run berikutnya.
+
+Test `test_an_in_flight_download_is_never_touched` menangkapnya: file target
+tidak hilang, tapi assertion pada file temp-nya gagal.
+
+Perbaikannya: file temp dikenali oleh sufiksnya dan **tidak** diproses sebagai
+kandidat untuk dibuang. Dia dilewati selama target-nya masih ada, dan baru dibuang sebagai
+yatim kalau target sudah hilang — itu yang meninggalkan run terputus setelah
+arsipnya sempat terindah.
+
+#### Bukti di lingkungan nyata
+
+File parsial dan unduhan aktif dibuat sengaja di staging sungguhan, lalu run
+dijalankan:
+
+```
+STEP 0: staging: 1 file basi dibuang, 1 unduhan berjalan dipertahankan
+  - dibuang: NCKL_inlineXBRL_T1_2025.zip
+  - dipertahankan (sedang diunduh): NCKL_inlineXBRL_T2_2025.zip
+```
+
+Folder `2025` ikut bertahan karena masih dipakai unduhan berjalan. Run
+lanjutan selesai `Successful: 4, Failed: 0`, exit 0, hash T4 tetap
+`27aead46…fccd`, keempat file utuh.
+
+Folder staging yang saya buat untuk uji sudah dibuang, jadi Celah 2 QA-007
+(folder kosong yang menumpuk) ikut tertutup.
+
+#### Tes yang menjaga
+
+| Pengaman | Yang dijaga |
+| --- | --- |
+| `test_the_measured_race_is_closed_by_scanning_first` | Race yang terukur ditutup: sebelum scan file terbaca selesai, sesudah scan tidak |
+| `test_an_in_flight_download_is_never_touched` | Target **dan** file `.crdownload` utuh |
+| `test_both_firefox_temp_suffixes_mark_in_flight` | `.crdownload` dan `.part` keduanya dikenali |
+| `test_an_in_flight_download_keeps_its_directories` | Folder yang masih dipakai tidak diprune |
+| `test_a_finished_staged_archive_is_also_discarded` | Arsip selesai di staging pun dibuang |
+| `test_empty_directories_are_pruned_but_the_root_stays` | 6 folder terhapus, root staging tetap ada |
+| `test_dry_run_reports_without_touching_anything` | `dry_run` tidak menyentuh filesystem |
+| `test_a_second_scan_of_a_cleaned_folder_finds_nothing` | Scan kedua bersih |
+
+Gate: 235 pytest (dari 222), ruff, mypy 31 file.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 
