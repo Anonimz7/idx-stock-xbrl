@@ -181,7 +181,7 @@ Prinsip:
 
 | ID | Tugas | Deliverable | Acceptance Criteria |
 | --- | --- | --- | --- |
-| PKG-001 | Source/venv distribution | Wheel + editable install | CLI dan bridge terinstal bersih |
+| PKG-001 | selesai | `python -m build` menghasilkan sdist + wheel; wheel dipasang ke venv kosong dan ketiga console script berjalan. `firefox_bridge.__version__` kini dibaca dari metadata, bukan literal |
 | PKG-002 | Build EXE | PyInstaller/Nuitka artifact | Jalan pada Windows target tanpa Python global |
 | PKG-003 | Installer | Start bridge, extension, config wizard | Install/uninstall tidak merusak data pengguna |
 | PKG-004 | Extension packaging | Signed/persistent XPI | Tidak perlu temporary add-on pada release final |
@@ -1495,6 +1495,80 @@ exit 0. Rekapitulasi seluruh run:
 Kriteria "1 NCKL + minimal 10 stock lain" terlampaui: NCKL + 12.
 
 Gate: 377 pytest, ruff, mypy 38 file.
+
+### Package build (LULUS) + coverage diukur
+
+Kriteria fase pertama terakhir: "`pytest`, coverage, Ruff, type checker,
+`web-ext lint`, dan package build lulus".
+
+```
+firefox_bridge-0.2.0.tar.gz        191.3 KB
+firefox_bridge-0.2.0-py3-none-any.whl  73.9 KB
+```
+
+Build berjalan dalam mode isolated, dan detail pentingnya adalah
+`Building wheel from sdist` — wheel dibangun **dari** sdist, jadi sdist-nya
+terbukti lengkap karena wheel tidak akan berhasil kalau ada berkas hilang.
+
+#### Uji clean install, dan satu kesalahan yang saya buat
+
+Wheel dipasang ke venv kosong, lalu 14 modul diimpor dan ketiga console script
+dijalankan. **Uji pertama saya tidak benar**: cwd-nya `productions`, jadi
+`import firefox_bridge` resolve ke source tree, bukan ke wheel — folder proyek
+men-*shadow* paket terpasang. Uji "clean install" itu sebenarnya tidak menguji
+apa pun yang sudah dibangun. Diulang dari direktori netral, import baru resolve
+ke `site-packages`.
+
+Dari instalasi wheel itu: `history verify` melaporkan 52 ok, dan shim lama
+`firefox_bridge.tools.bulk_downloader` tetap jalan.
+
+#### Dua cacat yang ditemukan proses ini
+
+**Versi paket berbohong.** `firefox_bridge.__version__` = `0.1.0` sementara
+metadata = `0.2.0`. Dua sumber kebenaran, dan tidak ada test yang gagal selama
+berbulan-bulan karena tidak ada yang mengadu keduanya. Sekarang dibaca dari
+`importlib.metadata`, jadi tidak ada lagi tempat untuk menulis angka kedua.
+
+**`history verify` memberi all-clear palsu.** Diuji dengan
+`--download-dir ...\saham` (salah satu level), hasilnya `0 ok, 0 bermasalah`
+— persis seperti pustaka yang sudah diverifikasi bersih dan utuh. Sekarang
+folder `saham/` yang tidak ada menghasilkan exit 2 dengan pesan yang menyebut
+level mana yang harus diberi, dan pustaka yang ada tapi kosong diberi catatan
+"tidak ada laporan untuk diverifikasi" di stdout.
+
+#### Coverage: 86% (pertama kali diukur)
+
+| Modul | Cover | Catatan |
+| --- | --- | --- |
+| `cli.py` | 94% | |
+| `downloader/retry.py` | 98% | |
+| `downloader/history.py` | 97% | |
+| `downloader/integrity.py` | 96% | |
+| `downloader/staging.py` | 95% | |
+| `validation.py` | 95% | |
+| `downloader/health.py` | 93% | |
+| `downloader/audit.py` | 90% | |
+| `idx/browser_flow.py` | 89% | |
+| `downloader/orchestrator.py` | 84% | |
+| `bridge.py` | 72% | jalur HTTP banyak cabang |
+| `config.py` | 64% | |
+| `client.py` | 67% | |
+| **`mcp_server.py`** | **0%** | tidak pernah diuji |
+| **`tools/bulk_downloader.py`** | **0%** | shim, sudah diuji sekarang |
+
+Dua modul 0% yang tersisa dicatat, bukan disembunyikan. `mcp_server.py`
+adalah adapter MCP yang **sudah dipakai** (tool `firefox-bridge` di sesi ini
+berjalan darinya) tetapi belum punya test. Itu gap>Paling явно, dan kandidat
+pekerjaan berikutnya.
+
+Shim yang 0% sekarang punya test: ia harus benar-benar menjalankan program yang
+sama — opsi `--stocks-file`, `--history`, `--dry-run`, `--report` semuanya
+harus ada, dan kode saham tidak valid harus keluar 2. Shim yang jalan tapi
+membuang opsi akan lebih buruk daripada yang gagal, karena perintah lama terlihat
+bekerja sambil melakukan sesuatu yang lain.
+
+Gate: 388 pytest, ruff, mypy 38 file, web-ext 0/0/0, build succeed, shim OK,
+coverage 86%.
 
 
 ### Pembersihan root `project02` dan status `browser-bridge`

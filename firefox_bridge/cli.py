@@ -40,7 +40,12 @@ from firefox_bridge.downloader.orchestrator import (
     download_stock,
     plan_stock_year,
 )
-from firefox_bridge.downloader.paths import download_history_path, download_root
+from firefox_bridge.downloader.paths import (
+    SAHAM_FOLDER,
+    download_history_path,
+    download_root,
+    saham_folder,
+)
 from firefox_bridge.downloader.reporting import print_run_summary
 from firefox_bridge.downloader.run_report import build_run_report, write_run_report
 from firefox_bridge.downloader.staging import (
@@ -233,7 +238,25 @@ def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
         return EXIT_SUCCESS
 
     history = load_download_history(download_dir)
+    # "0 ok, 0 problems" from a root with no `saham` folder is a false all-clear,
+    # and it is the exact shape a typo'd `--download-dir` produces -- passing
+    # `...\saham` instead of its parent. One rule, no heuristic: if there is no
+    # library there, nothing was verified, so say so and exit non-zero rather
+    # than reporting a clean bill of health for a folder that was never read.
+    folder = saham_folder(download_dir)
+    if not folder.is_dir():
+        problem(
+            f"  -> tidak ada folder '{SAHAM_FOLDER}/' di {download_root(download_dir)}\n"
+            f"     --download-dir menunjuk folder induk yang berisi '{SAHAM_FOLDER}/', "
+            "bukan folder itu sendiri.\n"
+            "     tidak ada yang bisa diverifikasi."
+        )
+        return EXIT_INVALID_INPUT
+
     report = verify_history(history, download_dir)
+    if not report.findings and not folder.is_dir():
+        notice("  -> tidak ada yang bisa diverifikasi")
+        return EXIT_INVALID_INPUT
     for finding in report.findings:
         line = f"  {finding.status.upper():<9} {finding.stock} {finding.year} TW{finding.quarter}"
         if finding.is_problem:
@@ -248,6 +271,15 @@ def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
         problems=len(report.problems),
         orphans=len(report.orphans),
     )
+    if not report.findings:
+        # A library folder that exists but holds nothing is a real state -- a
+        # fresh install, or a run that downloaded nothing. Saying so is what
+        # keeps it from reading as "checked everything, all fine".
+        notice(
+            f"  -> {folder} ada tapi kosong, tidak ada laporan untuk diverifikasi",
+            library=str(folder),
+        )
+        return EXIT_SUCCESS
     if report.orphans:
         notice(
             f"  {len(report.orphans)} file ada tapi belum tercatat; "

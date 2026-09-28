@@ -280,11 +280,63 @@ def test_the_cli_still_requires_stocks_without_history(capsys: pytest.CaptureFix
     assert "--stocks" in capsys.readouterr().err
 
 
-def test_history_verify_on_a_clean_root_exits_zero(
+def test_history_verify_on_an_empty_library_says_so(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    assert run(["--history", "verify", "--download-dir", str(tmp_path)]) == EXIT_SUCCESS
-    assert "HISTORY VERIFY" in capsys.readouterr().out
+    """A library folder that exists but holds nothing is a real state.
+
+    A fresh install has one. The tool must say it looked and found nothing,
+    because the alternative -- printing "0 ok" and exiting cleanly -- is
+    indistinguishable from a fully verified library.
+    """
+    (tmp_path / "saham").mkdir()
+
+    code = run(["--history", "verify", "--download-dir", str(tmp_path)])
+
+    assert code == EXIT_SUCCESS
+    # stdout, not stderr: an empty library is a state, not a failure.
+    assert "tidak ada laporan untuk diverifikasi" in capsys.readouterr().out
+
+
+def test_verify_refuses_to_all_clear_a_root_that_does_not_exist(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """`0 ok, 0 problems` from a typo'd path is a false all-clear.
+
+    The earlier version printed exactly that for `--download-dir ...\\saham`,
+    because that folder has no `saham` inside it. It looked identical to a
+    clean, fully verified library.
+    """
+    code = run(["--history", "verify", "--download-dir", str(tmp_path / "tidak-ada")])
+
+    assert code == EXIT_INVALID_INPUT
+    assert "tidak ada yang bisa diverifikasi" in capsys.readouterr().err
+
+
+def test_verify_points_the_saham_itself_out_as_a_wrong_root(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The mistake this guard exists for: passing `...\\saham` instead of its parent."""
+    (tmp_path / "saham" / "NCKL" / "2025").mkdir(parents=True)
+
+    code = run(["--history", "verify", "--download-dir", str(tmp_path / "saham")])
+
+    assert code == EXIT_INVALID_INPUT
+    error = capsys.readouterr().err
+    assert "saham/" in error
+    assert "folder induk" in error, "the message should say which level to pass"
+
+
+def test_verify_still_reports_a_real_library(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The guard must not swallow the normal case."""
+    recorded(tmp_path)
+
+    code = run(["--history", "verify", "--download-dir", str(tmp_path)])
+
+    assert code == EXIT_SUCCESS
+    assert "1 ok" in capsys.readouterr().out
 
 
 def test_history_verify_reports_a_missing_file_and_exits_1(

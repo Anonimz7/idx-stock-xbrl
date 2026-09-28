@@ -92,6 +92,15 @@ def download_history_path(download_dir: Path | None = None) -> Path:
     return download_root(download_dir) / SAHAM_FOLDER / HISTORY_FILENAME
 
 
+def saham_folder(download_dir: Path | None = None) -> Path:
+    """Return the folder holding every downloaded report.
+
+    Exposed so a command can say "there is nothing here" instead of reporting
+    zero problems, which reads exactly the same and is the opposite of true.
+    """
+    return download_root(download_dir) / SAHAM_FOLDER
+
+
 def download_exists(
     stock: str,
     year: int,
