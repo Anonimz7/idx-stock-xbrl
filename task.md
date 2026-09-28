@@ -1479,7 +1479,23 @@ dilakukan di batasnya, di `_as_downloader_error`, tempat semua translasi
 batas lain sudah terjadi. Test menyassert `TimeoutError` secara spesifik supaya
 jalan pintas import di masa depan langsung patah.
 
+Tambahan 3 saham (BBNI, BBTN, PGAS) dijalankan terpisah: 12 report, 0 gagal,
+exit 0. Rekapitulasi seluruh run:
+
+| | |
+| --- | --- |
+| Saham | **13** (NCKL + 12 lain) |
+| Report | **52 file, 11 MB** |
+| `history verify` | **52 ok, 0 bermasalah, 0 tanpa catatan** |
+| `integrity_status` | 52 `verified`, 0 selain itu |
+| Duplikat | 0 |
+| Saham gagal | 0 — UNVR berhasil setelah timeout diperbaiki |
+| Sisa staging | kosong |
+
+Kriteria "1 NCKL + minimal 10 stock lain" terlampaui: NCKL + 12.
+
 Gate: 377 pytest, ruff, mypy 38 file.
+
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 
