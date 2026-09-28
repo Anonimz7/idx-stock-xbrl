@@ -11,11 +11,15 @@ from urllib.parse import urlsplit, urlunsplit
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_TIMEOUT = 10.0
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_RETRY_BACKOFF = 0.5
 TOKEN_ENV = "FIREFOX_BRIDGE_TOKEN"
 TOKEN_FILE_ENV = "FIREFOX_BRIDGE_TOKEN_FILE"
 URL_ENV = "FIREFOX_BRIDGE_URL"
 PORT_ENV = "FIREFOX_BRIDGE_PORT"
 TIMEOUT_ENV = "FIREFOX_BRIDGE_TIMEOUT"
+MAX_RETRIES_ENV = "FIREFOX_BRIDGE_MAX_RETRIES"
+RETRY_BACKOFF_ENV = "FIREFOX_BRIDGE_RETRY_BACKOFF"
 
 
 def default_token_file() -> Path:
@@ -83,6 +87,30 @@ def _parse_timeout(value: str | None, default: float) -> float:
     return timeout
 
 
+def _parse_max_retries(value: str | None, default: int) -> int:
+    if value is None or not value.strip():
+        return default
+    try:
+        retries = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{MAX_RETRIES_ENV} must be an integer") from exc
+    if retries < 0:
+        raise ValueError(f"{MAX_RETRIES_ENV} must be zero or greater")
+    return retries
+
+
+def _parse_retry_backoff(value: str | None, default: float) -> float:
+    if value is None or not value.strip():
+        return default
+    try:
+        backoff = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{RETRY_BACKOFF_ENV} must be a number") from exc
+    if backoff < 0:
+        raise ValueError(f"{RETRY_BACKOFF_ENV} must be zero or greater")
+    return backoff
+
+
 def _normalise_url(value: str) -> str:
     value = value.strip()
     parsed = urlsplit(value)
@@ -104,6 +132,8 @@ class Settings:
     url: str = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
     port: int = DEFAULT_PORT
     timeout: float = DEFAULT_TIMEOUT
+    max_retries: int = DEFAULT_MAX_RETRIES
+    retry_backoff: float = DEFAULT_RETRY_BACKOFF
     token_file: Path = field(default_factory=default_token_file)
 
     @property
@@ -147,7 +177,17 @@ class Settings:
             url = f"http://{DEFAULT_HOST}:{port}"
 
         timeout = _parse_timeout(os.environ.get(TIMEOUT_ENV), DEFAULT_TIMEOUT)
-        return cls(token=token, url=url, port=port, timeout=timeout, token_file=token_file)
+        max_retries = _parse_max_retries(os.environ.get(MAX_RETRIES_ENV), DEFAULT_MAX_RETRIES)
+        retry_backoff = _parse_retry_backoff(os.environ.get(RETRY_BACKOFF_ENV), DEFAULT_RETRY_BACKOFF)
+        return cls(
+            token=token,
+            url=url,
+            port=port,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            token_file=token_file,
+        )
 
 
 def get_settings() -> Settings:
@@ -164,9 +204,13 @@ load_settings = get_settings
 
 __all__ = [
     "DEFAULT_HOST",
+    "DEFAULT_MAX_RETRIES",
     "DEFAULT_PORT",
+    "DEFAULT_RETRY_BACKOFF",
     "DEFAULT_TIMEOUT",
+    "MAX_RETRIES_ENV",
     "PORT_ENV",
+    "RETRY_BACKOFF_ENV",
     "Settings",
     "TIMEOUT_ENV",
     "TOKEN_ENV",
