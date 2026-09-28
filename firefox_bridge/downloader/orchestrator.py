@@ -18,6 +18,7 @@ from firefox_bridge.idx.link_parser import (
     quarter_from_report_href,
 )
 from firefox_bridge.pacing import wait_before_step
+from firefox_bridge.validation import validate_archive, validate_report_url
 
 from ..progress import notice, progress
 from .filesystem import move_completed_download, wait_for_completed_download
@@ -103,6 +104,10 @@ def download_detected_link(
 
     ref = _resolve_current_ref(client, tab_id, year, quarter)
     staging_relative = staging_relative_filename(stock, year, quarter)
+    # Re-checked here, not only during recognition. Between the snapshot and this
+    # line the page could have been re-rendered, and this is the last point
+    # before the URL is actually fetched.
+    href = validate_report_url(href, stock, year, quarter)
     wait_before_step(f"jeda sebelum download TW{quarter}")
     progress(
         f"STEP DOWNLOAD: TW{quarter} {stock} {year} -> staging: {staging_relative}",
@@ -118,6 +123,10 @@ def download_detected_link(
 
     wait_before_step("jeda sebelum menunggu selesai download")
     size = wait_for_completed_download(staging_path)
+    # Checked here, while the file is still in staging: a truncated or non-ZIP
+    # download is rejected before it is ever recorded as a report, and discarding
+    # it costs nothing.
+    size = validate_archive(staging_path)
     wait_before_step("jeda sebelum memindahkan file")
     move_completed_download(staging_path, final_path, replace=integrity_failed)
     wait_before_step("jeda sebelum menulis JSON")

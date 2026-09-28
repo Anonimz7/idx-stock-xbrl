@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ..validation import normalize_stock_code
+
 SAHAM_FOLDER = "saham"
 STAGING_FOLDER = "staging"
 HISTORY_FILENAME = "download_history.json"
@@ -49,10 +51,11 @@ def resolve_output_path(
     final directory ``<root>/saham/<STOCK>/<YEAR>/`` and ``relative_filename`` is
     relative to ``<root>`` as stored in the history JSON.
     """
-    folder = download_root(download_dir) / SAHAM_FOLDER / stock.upper() / str(year)
+    code = normalize_stock_code(stock)
+    folder = download_root(download_dir) / SAHAM_FOLDER / code / str(year)
     folder.mkdir(parents=True, exist_ok=True)
-    filename = report_filename(stock, year, quarter)
-    relative_filename = f"{SAHAM_FOLDER}/{stock.upper()}/{year}/{filename}"
+    filename = report_filename(code, year, quarter)
+    relative_filename = f"{SAHAM_FOLDER}/{code}/{year}/{filename}"
     return folder, relative_filename
 
 
@@ -69,8 +72,9 @@ def final_report_path(
 
 def staging_relative_filename(stock: str, year: int, quarter: int) -> str:
     """Return the Firefox-relative staging path for one report."""
-    filename = report_filename(stock, year, quarter)
-    return f"{SAHAM_FOLDER}/{STAGING_FOLDER}/{stock.upper()}/{year}/{filename}"
+    code = normalize_stock_code(stock)
+    filename = report_filename(code, year, quarter)
+    return f"{SAHAM_FOLDER}/{STAGING_FOLDER}/{code}/{year}/{filename}"
 
 
 def staging_report_path(

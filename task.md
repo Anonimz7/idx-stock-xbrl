@@ -331,10 +331,10 @@ temporary add-on yang dimuat ulang tiap restart.
 | DATA-007 | belum | Perintah `history verify/rebuild` belum ada |
 | SEC-001 | berjalan | Token di luar project; rotasi dan permission belum |
 | SEC-002 | berjalan | Bind loopback sudah ada; enforcement belum |
-| SEC-003 | belum | Validasi stock code belum |
-| SEC-004 | belum | Allowlist URL IDX belum |
-| SEC-005 | belum | Validasi signature ZIP belum |
-| SEC-006 | belum | Test redaksi token belum |
+| SEC-003 | selesai | `normalize_stock_code` menolak non-alfanumerik, `..`, separator, nama device Windows, dan kode >10 karakter; dipasang di CLI (exit 2 sebelum browser dibuka) **dan** di `paths.py` sebagai choke point |
+| SEC-004 | selesai | `validate_report_url` mewajibkan skema http/https, host persis `www.idx.co.id`/`idx.co.id`, tahun, segmen kuartal (`/TWn/` atau `/Audit/` untuk TW4), dan segmen saham yang cocok; dipasang di `is_report_link` **dan** tepat sebelum download |
+| SEC-005 | selesai | `validate_archive` memeriksa ukuran, signature ZIP, end-of-central-directory, keterbacaan, jumlah entri, dan rasio kompresi; dijalankan di staging sebelum file dipindah |
+| SEC-006 | selesai | `tests/test_secret_redaction.py`: unduhan penuh tidak menulis token ke log/JSON/console, plus cek statis bahwa token tidak pernah masuk emitter |
 | CLI-001 | selesai | `firefox-bridge-download` terpasang dari `pyproject.toml` |
 | CLI-002 | berjalan | Exit code 0/1/2 ada; kode 3 untuk bridge gagal belum |
 | CLI-003 | belum | Config file belum |
@@ -821,6 +821,111 @@ menyaring satu sesi.
 | `test_run_summary_reaches_the_log` | Summary masuk log, kegagalan berlevel `WARNING` |
 | `test_token_print_in_server_stays_a_plain_print` | `print(settings.token)` tidak pernah jadi record log |
 | `isolated_log_dir` (conftest) | `pytest` tidak pernah menyentuh log proyek |
+
+### SEC-003/004/005/006 — Jalur validasi ditutup (LULUS)
+
+Empat task ini dikerjakan sebagai satu kesatuan karena bentuknya satu rantai:
+setiap tahap mempercayai input dari tahap sebelumnya, dan sebelumnya setiap mata
+rantainya kosong.
+
+```
+stock code dari CLI  ──►  SEC-003  ──►  saham/<CODE>/<YEAR>/
+href dari halaman    ──►  SEC-004  ──►  URL yang di-fetch
+byte dari download   ──►  SEC-005  ──►  arsip yang masuk folder final
+token / Authorization──►  SEC-006  ──►  tidak pernah tercetak
+```
+
+#### Yang setiap cek Irakritikal
+
+**SEC-003** menolak apa pun yang bukan alfanumerik ASCII sepanjang 1–10
+karakter.otek Sengaja lebih sempit dari yang mungkin|IDX perlukan: kode asli
+yang ditolak itu perbaikan satu baris, sedangkan path yang tertelusuri adalah
+file yang ditulis di tempat tak terduga. Nama device Windows (`CON`, `NUL`,
+`COM1`…) juga ditolak karena gagal di level OS jauh setelah folder chosen.
+Dipasang di dua tempat: CLI (exit 2, sebelum tab browser dibuka) dan
+`paths.py` — karena `paths` adalah choke point yang dilalui setiap download,
+termasuk pemanggil programatik yang tidak lewat CLI.
+
+**SEC-004** memeriksa **host**, bukan cuma nama file. `is_report_link` lama hanya
+mencocokkan fragmen path, sehingga
+`https://evil.example/…/Laporan%20Keuangan%20Tahun%202025/TW1/NCKL/inlineXBRL.zip`
+memenuhinya — semua fragmennya cocok, hanya host-nya berbeda. Siapa pun yang
+bisa menaruh anchor di halaman IDX akan memilih URL yang diambil program ini.
+Host kini harus persis `www.idx.co.id` atau `idx.co.id`.
+
+Dua detail yang membuat cek ini benar secara teknis: `unquote` diterapkan
+sebelum pencocokan tahun/kuartal, karena IDX menulis spasi sebagai `%20`; dan
+segmen saham harus cocok, karena IDX memuat laporan **semua** perusahaan, jadi
+host yang benar saja tidak menjamin itu laporan emiten yang diminta.
+
+Cek dipasang dua kali: saat pengenalan link, dan lagi tepat sebelum download —
+karena di antara snapshot dan baris itu halaman bisa dirender ulang.
+
+**SEC-005** berjalan di staging, **sebelum** file dipindahkan. Unduhan yang
+terputus adalah kegagalan yang paling mungkin terjadi, dan menolaknya saat masih
+di staging berarti membuangnya tidak incurs biaya apa pun. Signature, absence of
+end-of-central-directory, keterbacaan, dan rasio kompresi diperiksa — rasio
+terakhir menangkap zip bomb yang secara teknis ZIP yang valid.
+
+**SEC-006** menjadikan pemindaian manual yang pernah saya lakukan jadi test
+permanen: satu unduhan penuh dijalankan dengan token ada di environment, lalu
+log, JSON history, stdout, dan stderr searching. Ditambah cek statis bahwa token
+tidak pernah masuk emitter mana pun.
+
+#### Dua bug yang ditemukan oleh test saya sendiri
+
+**Nama device Windows lolos.** `candidate in _RESERVED_WINDOWS_NAMES`
+membandingkan `"CON"` dengan set berisi `"con"` — huruf besar vs kecil, jadi
+tidak pernah cocok. Dipperbaiki dengan `candidate.lower()`. Ini yang menarik: bug
+yang hanya muncul di Windows, di tester yang kebetulan tidak memakai kode
+berupa device name.
+
+**Default falsy di helper test.** `entries or {…}` membuat `{}` (justru kasus
+yang diuji) mengambil dict default yang berisi. Pola `X or Y` yang salah
+membuat test melompatkan sesuatu yang tidak diuji sama sekali.
+
+#### Catatan: `server.py` mengonfigurasi logging sebagai efek samping import
+
+`server.py:15` memanggil `get_logger()` di level modul, jadi **mengimpor**
+modul itu langsung membuka `logs/bridge.log`. Bukan kebocoran token — test
+membuktikan nilai token tidak masuk file itu — tapi efek samping yang tidak
+diharapkan pada modul entry point. Belum diperbaiki; dicatat.
+
+#### Bukti bahwa guard tidak menolak data sungguhan
+
+Cold start penuh dengan keempat guard aktif: 4 URL IDX asli diterima (termasuk
+path `/Audit/` untuk TW4 dan `//Laporan` double-slash), 4 ZIP asli diterima,
+hash identik dengan run-run sebelumnya, exit 0. Kalau validasi terlalu ketat,
+run inilah yang akan menunjukkannya — bukan unit test.
+
+Jalur negatif diuji dari CLI dan semuanya keluar **sebelum** browser dibuka:
+
+```
+--stocks '../evil'              -> exit 2  (hanya huruf dan angka ASCII)
+--stocks 'NCKL/../../Windows'   -> exit 2  (terlalu panjang)
+--stocks 'CON'                  -> exit 2  (nama device Windows)
+--stocks 'NC KL'                -> exit 2  (spasi)
+```
+
+#### Tes yang menjaga
+
+| Pengaman | Yang dijaga |
+| --- | --- |
+| `test_real_stock_codes_are_accepted` | 9 kode IDX nyata tidak ditolak |
+| `test_codes_that_could_escape_the_download_root_are_rejected` | 13 varian traversal/illegal |
+| `test_windows_device_names_are_rejected` | `CON`, `PRN`, `AUX`, `NUL`, `COM1`, `LPT9` |
+| `test_paths_module_refuses_to_build_a_traversing_path` | `paths.py` menolak, bukan cuma CLI |
+| `test_off_idx_urls_are_rejected` | 8 host/scheme palsu termasuk `idx.co.id.evil.example` dan `javascript:` |
+| `test_url_for_another_stock_is_rejected` | Laporan emiten lain pada host yang benar ditolak |
+| `test_tw4_must_come_from_the_audit_path` | URL `/TW4/` palsu ditolak |
+| `test_link_parser_no_longer_recognizes_off_host_links` | Pengenalan link ikut menolak host asing |
+| `test_a_truncated_archive_is_rejected` | Unduhan terputus ditolak |
+| `test_a_zip_bomb_is_rejected` | Rasio kompresi mencurigakan ditolak |
+| `test_a_full_download_writes_no_token_to_log_history_or_console` | 4 permukaan output searched |
+| `test_no_emitter_is_ever_given_the_token` | Cek statis seluruh source |
+| `test_the_token_subcommand_prints_without_writing_to_the_log` | Fitur baca-token tidak membuka log |
+
+Gate: 222 pytest (dari 160), ruff, mypy 30 file, node --check, web-ext 0/0/0.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +25,25 @@ from firefox_bridge.downloader.paths import (
 
 from conftest import make_snapshot
 
-CONTENT = b"PK\x03\x04test"
+
+def _report_zip() -> bytes:
+    """Return a minimal but genuinely readable ZIP archive.
+
+    The orchestrator now rejects a completed download that is not a real
+    archive, so a fixture of magic bytes would fail for the right reason while
+    measuring the wrong thing. The timestamp is pinned so the bytes -- and
+    therefore the SHA-256 written into the history -- are identical on every
+    run, which is what lets these tests compare hashes at all.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        info = zipfile.ZipInfo("instance_1/Navigator.txt", date_time=(2025, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        archive.writestr(info, b"xbrl report payload for a quarter")
+    return buffer.getvalue()
+
+
+CONTENT = _report_zip()
 HREF = (
     "https://www.idx.co.id/Laporan%20Keuangan%20Tahun%202025/"
     "TW1/NCKL/inlineXBRL.zip"
@@ -201,7 +221,10 @@ def test_download_detected_link_redownloads_a_corrupted_file(
         tmp_path,
     )
     final_path = final_report_path("NCKL", 2025, 1, tmp_path)
-    final_path.write_bytes(b"corrupted payload with a different size")
+    # A real archive cut in half, which is what an interrupted download actually
+    # leaves behind. A different size and a different hash, so the integrity
+    # check is what sends this back for a re-download.
+    final_path.write_bytes(CONTENT[: len(CONTENT) // 2])
 
     download_detected_link(
         client,  # type: ignore[arg-type]

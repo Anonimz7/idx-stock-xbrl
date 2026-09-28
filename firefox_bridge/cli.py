@@ -23,6 +23,7 @@ from firefox_bridge.downloader.reporting import print_run_summary
 from firefox_bridge.idx.link_parser import quarter_from_report_href
 from firefox_bridge.pacing import minimum_one_second
 from firefox_bridge.progress import problem, progress
+from firefox_bridge.validation import ValidationError, normalize_stock_code
 
 DEFAULT_STOCK_DELAY_SECONDS = 3.0
 EXIT_SUCCESS = 0
@@ -79,11 +80,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_stock_codes(raw: str) -> list[str]:
-    """Return normalized, de-duplicated stock codes preserving input order."""
+    """Return normalized, de-duplicated stock codes preserving input order.
+
+    Each code becomes a folder name under `saham/`, so validation happens here
+    rather than at the point of use: the cheapest moment to reject `../` is
+    before a browser tab is opened, with an exit code the caller can tell apart
+    from a download failure.
+    """
     codes: list[str] = []
     for item in raw.split(","):
-        code = item.strip().upper()
-        if code and code not in codes:
+        if not item.strip():
+            continue
+        try:
+            code = normalize_stock_code(item)
+        except ValidationError as error:
+            raise argparse.ArgumentTypeError(str(error)) from error
+        if code not in codes:
             codes.append(code)
     return codes
 
@@ -106,7 +118,11 @@ def _report_processed(
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     args = build_parser().parse_args(argv)
-    stock_codes = parse_stock_codes(args.stocks)
+    try:
+        stock_codes = parse_stock_codes(args.stocks)
+    except argparse.ArgumentTypeError as error:
+        problem(f"Stock code tidak valid: {error}")
+        return EXIT_INVALID_INPUT
     if not stock_codes:
         problem("No stock codes supplied")
         return EXIT_INVALID_INPUT

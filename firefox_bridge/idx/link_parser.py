@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlparse
 
+from ..validation import IDX_HOSTS
 from .models import ReportLink
 from .selectors import snapshot_elements
 
@@ -19,9 +21,29 @@ def year_path_markers(year: int) -> tuple[str, str]:
     return (f"tahun%20{year}".lower(), f"tahun {year}".lower())
 
 
+def is_idx_host(href: str) -> bool:
+    """Return True only for a URL that IDX itself would serve.
+
+    Recognition is a decision about *where* a link points, not just what it is
+    called. A path fragment such as `/Laporan%20Keuangan%20Tahun%202025/TW1/...`
+    can be written on any host at all, so a name-based match alone would accept
+    a link that sends the download somewhere else entirely.
+    """
+    try:
+        parsed = urlparse(href.strip())
+    except ValueError:
+        return False
+    return (parsed.scheme or "").lower() in {"http", "https"} and (
+        (parsed.hostname or "").lower() in IDX_HOSTS
+    )
+
+
 def is_report_link(href: str, year: int) -> bool:
     """Return True when the href is an inlineXBRL archive for the given year."""
-    normalized = href.lower()
+    candidate = href.strip()
+    if not is_idx_host(candidate):
+        return False
+    normalized = candidate.lower()
     if not normalized.endswith(REPORT_FILE_SUFFIX):
         return False
     if REPORT_FILENAME_MARKER not in normalized:
