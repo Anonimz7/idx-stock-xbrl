@@ -18,9 +18,14 @@ from firefox_bridge.idx.link_parser import (
     quarter_from_report_href,
 )
 from firefox_bridge.pacing import wait_before_step
-from firefox_bridge.validation import validate_archive, validate_report_url
+from firefox_bridge.validation import (
+    ValidationError,
+    validate_archive,
+    validate_report_url,
+)
 
 from ..progress import notice, progress
+from .errors import DownloaderError, DownloadTimeout, IntegrityError, StaleReference
 from .filesystem import move_completed_download, wait_for_completed_download
 from .history import history_entry, load_download_history, record_download_history
 from .integrity import audit_stock_year_hashes, file_sha256
@@ -117,16 +122,24 @@ def download_detected_link(
     )
     result = client.download(tab_id=tab_id, ref=ref, filename=staging_relative)
     if not isinstance(result, dict) or not result.get("downloaded"):
-        raise RuntimeError(f"Download TW{quarter} {stock} {year} gagal dimulai: {result}")
+        # The download was refused rather than interrupted, so this is neither a
+        # timeout nor an integrity problem: a plain non-fatal per-stock failure.
+        raise DownloaderError(f"Download TW{quarter} {stock} {year} gagal dimulai: {result}")
 
     staging_path = _resolve_staging_path(result, stock, year, quarter, download_dir)
 
     wait_before_step("jeda sebelum menunggu selesai download")
-    size = wait_for_completed_download(staging_path)
+    try:
+        size = wait_for_completed_download(staging_path)
+    except TimeoutError as error:
+        raise DownloadTimeout(str(error)) from error
     # Checked here, while the file is still in staging: a truncated or non-ZIP
     # download is rejected before it is ever recorded as a report, and discarding
     # it costs nothing.
-    size = validate_archive(staging_path)
+    try:
+        size = validate_archive(staging_path)
+    except ValidationError as error:
+        raise IntegrityError(f"Arsip TW{quarter} ditolak: {error}") from error
     wait_before_step("jeda sebelum memindahkan file")
     move_completed_download(staging_path, final_path, replace=integrity_failed)
     wait_before_step("jeda sebelum menulis JSON")
@@ -235,7 +248,7 @@ def _find_link_with_retry(
         snapshot = client.snapshot(tab_id=tab_id, max_elements=SNAPSHOT_ELEMENTS)
         link = find_inline_xbrl_link(snapshot, year, quarter)
     if link is None:
-        raise RuntimeError(f"Link TW{quarter} {year} tidak ditemukan")
+        raise StaleReference(f"Link TW{quarter} {year} tidak ditemukan di halaman")
     return link
 
 
@@ -260,7 +273,9 @@ def _resolve_current_ref(
         None,
     )
     if current_link is None or not current_link.get("ref"):
-        raise RuntimeError(f"Link TW{quarter} tahun {year} tidak tersedia untuk didownload")
+        raise StaleReference(
+            f"Link TW{quarter} tahun {year} tidak tersedia saat ref diambil ulang"
+        )
     return str(current_link["ref"])
 
 

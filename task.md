@@ -318,10 +318,10 @@ temporary add-on yang dimuat ulang tiap restart.
 | CORE-001 | selesai | `tests/fixtures/idx_nckl_2025_snapshot.json` + `test_regression_idx_page.py` mengunci 4 report, year searchbox, dan tombol Laporan |
 | CORE-002 | selesai | `bulk_downloader.py` 935 baris dipecah menjadi `idx/` (4 modul) dan `downloader/` (8 modul); shim lama tetap jalan |
 | CORE-003 | berjalan | `ReportLink`, `ReportTarget`, `DownloadResult`, `DownloadRecord`, `RunSummary` sudah typed; `dict` longgar masih dipakai di batas snapshot |
-| CORE-004 | belum | Semua error masih `RuntimeError`/`TimeoutError` umum |
+| CORE-004 | selesai | `downloader/errors.py`: `ExtensionDisconnected` (fatal), `StaleReference`, `DownloadTimeout`, `IntegrityError`; CLI menerjemahkan kegagalan transport ke taksonomi dan mencantumkan nama tipenya di pesan |
 | CORE-005 | belum | Belum ada retry/backoff |
 | CORE-006 | berjalan | `pacing.py` terpusat; `--delay` masih hardcoded default 3 detik di CLI |
-| CORE-007 | belum | Precheck connection belum ada di awal run |
+| CORE-007 | selesai | `downloader/health.py`: `ensure_extension_ready()` dijalankan sebagai STEP 0.5 sebelum workflow browser; kegagalan keluar sebagai exit 3 tanpa membuka tab |
 | DATA-001 | berjalan | Skema v1 tetap; migration belum ada |
 | DATA-002 | berjalan | Atomic write sudah ada; lock file belum |
 | DATA-003 | selesai | `downloader/staging.py`: pindai `saham/staging/` di awal run (STEP 0), laporkan, lalu bersihkan file basi dan folder kosong; unduhan berjalan dipertahankan |
@@ -1012,6 +1012,97 @@ Folder staging yang saya buat untuk uji sudah dibuang, jadi Celah 2 QA-007
 | `test_a_second_scan_of_a_cleaned_folder_finds_nothing` | Scan kedua bersih |
 
 Gate: 235 pytest (dari 222), ruff, mypy 31 file.
+
+### CORE-004 + CORE-007 — Taksonomi error dan health gate (LULUS)
+
+Keduanya dikerjakan bersama karena keduanya menjawab satu pertanyaan: **exit code
+dan pesan yang jelas saat extension disconnect** — kriteria fase pertama yang
+belum pernah terpenuhi.
+
+#### Exit code 3 akhirnya bisa terjadi
+
+CLI-002 sudah menjanjikan `3` untuk "bridge/extension gagal" sejak daftar tugas
+ditulis. **Tidak ada yang bisa menghasilkannya**: CLI menangkap semua error
+sebagai `Exception` umum, mencetak satu pesan, dan mengembalikan `1`. Run yang
+kehilangan extension dan run yang kehilangan ref basi pada satu ref basi terlihat identik, dan run
+terus mengulang kegagalan yang sama untuk setiap saham yang tersisa.
+
+#### Yang membedakan bukan seberapa parah, tapi apakah saham berikutnya bisa jalan
+
+Inilah yang jadi sumbu desainnya, dan ituatribut `fatal`:
+
+| Tipe | `fatal` | Alasan |
+| --- | --- | --- |
+| `ExtensionDisconnected` | **ya** | Tidak ada yang bisa bekerja setelahnya juga |
+| `StaleReference` | tidak | IDX me-render ulang; wajar, dan saham berikutnya dapat halaman baru |
+| `DownloadTimeout` | tidak | Unduhan satu yang lambat, bukan lingkungan yang mati |
+| `IntegrityError` | tidak | Satu arsip buruk, bukan semua |
+
+Mematikan run karena satu ref basi akan berarti satu halaman flaky mengakhiri
+batch ratusan saham. Itu kesalahan yang mahal dan tidak terlihat sampaiTerlambat.
+
+#### Health gate: sebelum satu langkah browser pun
+
+Membuka profil IDX_initializer took sekitar dua belas langkah ber-paced dan
+setengah menit. Kalau extension tidak terhubung, setiap langkah itu gagal dengan
+cara yang sama, dan pengguna dibiarkan membaca timeout daripada satu fakta yang
+penting: nyalakan bridge, lalu tekan Connect.
+
+`ensure_extension_ready()` classifies dua kondisi yang berbeda namun bagi
+pengguna ini hal yang sama persis: bridge tidak berjalan (`ConnectError`) dan
+bridge hidup tapi extension tidak menjawab (`connected: false`). Keduanya menjadi
+`ExtensionDisconnected`, keduanya keluar sebagai exit 3, keduanya keluar
+sebelum menyentuh browser.
+
+#### Satu perbaikan yang datang dari test
+
+`ensure_extension_ready()` awalnya memanggil `client.status()` **dua kali** untuk
+satu fakta — sekali untuk classifies, sekali untuk mengambil versi. Itu dua
+round-trip, dan ada jendela di mana extension bisa terhubung di antara keduanya,
+sehingga hasil pemeriksaan dan versi yang dilaporkan menggambarkan dua momen
+berbeda. Test `test_a_connected_extension_passes_the_gate` menangkapnya lewat
+`IndexError` pada fake client. Sekarang satu pembacaan.
+
+#### Bukti di lingkungan nyata
+
+Bridge dimatikan, lalu CLI dijalankan:
+
+```
+PRAJAMAL: Bridge tidak berjalan di http://127.0.0.1:8765 (ConnectError)
+  -> nyalakan bridge, lalu tekan Connect di popup extension
+EXIT: 3   (durasi 2,4 detik)
+```
+
+Lalu bridge dinyalakan lagi, jalur sehat tetap utuh:
+
+```
+EXIT: 0
+STEP 0.5: extension 0.1.8 (siap)
+STEP 0: staging bersih
+Successful: 4 | Failed: 0
+hash T4: 27aead46…fccd
+```
+
+Cabang "bridge hidup, extension mati" diuji di level unit
+(`test_a_bridge_with_no_extension_is_reported_not_raised`) karena mematikan
+extension di Firefox tidak bisa dilakukan dari sini; kedua cabangberbisnis di
+ke `ExtensionDisconnected` yang sama dan exit code yang sama, dan itu yang diuji.
+
+#### Tes yang menjaga
+
+| Pengaman | Yang dijaga |
+| --- | --- |
+| `test_only_losing_the_extension_is_fatal` | Hanya kehilangan extension yang `fatal` |
+| `test_a_refused_connection_becomes_extension_disconnected` | `ConnectError` → fatal |
+| `test_http_503_becomes_extension_disconnected` | 503 → fatal |
+| `test_other_http_errors_are_not_treated_as_a_disconnect` | 400 **tidak** menghentikan run |
+| `test_a_disconnected_extension_exits_3_before_touching_the_browser` | Exit 3, pesan menyebut Connect, tidak ada `STEP 1` |
+| `test_a_fatal_failure_mid_run_exits_3_and_stops_early` | 3 saham diminta, hanya 1 dicoba |
+| `test_a_non_fatal_failure_exits_1_and_continues` | Satu saham gagal, 2 lain tetap jalan |
+| `test_the_failure_line_names_the_error_type` | Nama tipe ada di pesan console |
+| `test_exit_codes_are_distinct` | 0/1/2/3 empat nilai berbeda |
+
+Gate: 253 pytest (dari 235), ruff, mypy 33 file.
 
 ### Pembersihan root `project02` dan status `browser-bridge`
 

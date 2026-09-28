@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from firefox_bridge.downloader import orchestrator
+from firefox_bridge.downloader.errors import DownloaderError, StaleReference
 from firefox_bridge.downloader.models import DownloadResult
 from firefox_bridge.downloader.orchestrator import (
     download_all_detected,
@@ -147,7 +148,10 @@ def test_download_detected_link_requires_a_fresh_ref(
         def snapshot(self, **_kwargs: Any) -> dict[str, Any]:
             return make_snapshot([])
 
-    with pytest.raises(RuntimeError):
+    # Asserting the specific type, not `RuntimeError`: the whole point of the
+    # error taxonomy is that a caller can tell "the page moved under us" apart
+    # from every other failure without parsing a message.
+    with pytest.raises(StaleReference, match="tidak tersedia"):
         download_detected_link(
             EmptyClient(),  # type: ignore[arg-type]
             "15",
@@ -171,7 +175,7 @@ def test_download_detected_link_rejects_a_failed_download(
         def download(self, **_kwargs: Any) -> dict[str, Any]:
             return {"downloaded": False, "error": "blocked"}
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(DownloaderError, match="gagal dimulai"):
         download_detected_link(
             FailingClient(),  # type: ignore[arg-type]
             "15",

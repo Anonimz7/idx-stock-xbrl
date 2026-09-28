@@ -16,7 +16,11 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from firefox_bridge.client import FirefoxBridgeClient
+import httpx
+
+from firefox_bridge.client import FirefoxBridgeClient, FirefoxBridgeClientError
+from firefox_bridge.downloader.errors import DownloaderError, ExtensionDisconnected
+from firefox_bridge.downloader.health import EXTENSION_UNAVAILABLE_STATUS, ensure_extension_ready
 from firefox_bridge.downloader.models import DownloadResult, RunSummary
 from firefox_bridge.downloader.orchestrator import download_all_detected, download_stock
 from firefox_bridge.downloader.reporting import print_run_summary
@@ -30,6 +34,8 @@ DEFAULT_STOCK_DELAY_SECONDS = 3.0
 EXIT_SUCCESS = 0
 EXIT_FAILURES = 1
 EXIT_INVALID_INPUT = 2
+# Promised by CLI-002 and, until now, unreachable: nothing could produce it.
+EXIT_BRIDGE_UNAVAILABLE = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,6 +122,29 @@ def _report_processed(
     )
 
 
+def _as_downloader_error(error: Exception) -> DownloaderError:
+    """Translate a failure into the taxonomy, or pass an existing member through.
+
+    A transport failure and a page that changed under us arrive here as
+    unrelated exception types. To the person reading the output they are the same
+    event -- the bridge or the extension went away -- and it is fatal, so it has
+    to become `ExtensionDisconnected` before anything decides whether to continue.
+    """
+    if isinstance(error, DownloaderError):
+        return error
+
+    if isinstance(error, httpx.ConnectError):
+        return ExtensionDisconnected(f"Bridge tidak menjawab: {error.__class__.__name__}")
+
+    if isinstance(error, FirefoxBridgeClientError):
+        status = getattr(error, "status_code", None)
+        if status == EXTENSION_UNAVAILABLE_STATUS:
+            return ExtensionDisconnected("Extension berhenti menjawab (HTTP 503)")
+        return DownloaderError(f"Bridge menolak perintah (HTTP {status}): {error}")
+
+    return DownloaderError(str(error) or type(error).__name__)
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     args = build_parser().parse_args(argv)
@@ -132,6 +161,17 @@ def run(argv: Sequence[str] | None = None) -> int:
     download_dir = Path(args.download_dir) if args.download_dir else None
     client = FirefoxBridgeClient()
     summary = RunSummary()
+
+    # Before a single paced browser step: if the extension is not connected, every
+    # one of those steps fails identically and the user is left reading a timeout
+    # instead of the one fact that matters.
+    try:
+        version = ensure_extension_ready(client)
+    except ExtensionDisconnected as error:
+        problem(f"PRAJAMAL: {error}")
+        problem("  -> nyalakan bridge, lalu tekan Connect di popup extension")
+        return EXIT_BRIDGE_UNAVAILABLE
+    progress(f"STEP 0.5: extension {version or 'terhubung'} (siap)", extension=version)
 
     # Before anything else: a run killed mid-download leaves a partial file at
     # the exact path this run is about to download to, and the completion check
@@ -172,11 +212,30 @@ def run(argv: Sequence[str] | None = None) -> int:
                 summary.results.append(result)
                 _report_processed(result, args.year, all_detected=False)
         except Exception as error:  # noqa: BLE001
-            summary.failures.append(f"{stock}: {error}")
-            problem(f"FAILED {stock} {args.year}: {error}", stock=stock, year=args.year)
+            failure = _as_downloader_error(error)
+            kind = type(failure).__name__
+            # The type goes in the message, not only in the log field: a wall of
+            # failures is read on the console, and "which of these can I retry"
+            # should not require cross-referencing the JSON log.
+            summary.failures.append(f"{stock}: [{kind}] {failure}")
+            problem(
+                f"FAILED {stock} {args.year} [{kind}]: {failure}",
+                stock=stock,
+                year=args.year,
+                error_type=kind,
+            )
+            if failure.fatal:
+                # Nothing after this would work either. Say so once and stop,
+                # rather than repeating the same failure for every stock left.
+                problem(f"  -> run dihentikan: {failure}")
+                summary.fatal_error = str(failure)
+                time.sleep(args.delay)
+                break
         time.sleep(args.delay)
 
     print_run_summary(summary)
+    if summary.fatal_error:
+        return EXIT_BRIDGE_UNAVAILABLE
     return summary.exit_code
 
 

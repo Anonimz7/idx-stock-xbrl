@@ -63,6 +63,11 @@ class RunSummary:
 
     results: list[DownloadResult] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
+    # Set when a failure means the run could not meaningfully continue, e.g. the
+    # extension disappeared. Recorded separately from `failures` because the
+    # exit code has to distinguish "some stocks failed" from "the environment is
+    # gone", and a caller cannot tell those apart from a list of strings.
+    fatal_error: str | None = None
 
     @property
     def successful(self) -> int:
