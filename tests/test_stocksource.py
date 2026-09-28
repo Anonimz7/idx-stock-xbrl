@@ -152,6 +152,45 @@ def test_common_spellings_of_the_delisted_column_are_accepted(column: str) -> No
     assert result.skipped_delisted == 1
 
 
+def test_a_prefixed_delisted_column_is_found() -> None:
+    """The real export calls it `label_delisted`.
+
+    Enumerating spellings is how a reader ends up refusing a perfectly good file
+    on a prefix nobody thought to list.
+    """
+    columns = "`ticker`, `company_name`, `label_delisted`, `Sector`"
+    rows = "('NCKL','NICKEL',0,'Energi'),('BNI','BANK',1,'Energi')"
+
+    result = read_sql_dump(dump(rows, columns=columns))
+
+    assert result.codes == ("NCKL",)
+    assert result.skipped_delisted == 1
+
+
+def test_an_exact_name_is_preferred_over_a_prefixed_one() -> None:
+    """`is_delisted` is an exact candidate, so it wins over `label_delisted`.
+
+    When a table carries both, the plain reading of "is it delisted" is the
+    unambiguous one; picking the prefixed column instead would silently filter
+    on the wrong flag.
+    """
+    columns = "`ticker`, `label_delisted`, `is_delisted`"
+    rows = "('NCKL','0','1'),('BNI','1','0')"
+
+    result = read_sql_dump(dump(rows, columns=columns))
+
+    # `is_delisted` is column 2: NCKL is the delisted one.
+    assert result.codes == ("BNI",)
+    assert result.skipped_delisted == 1
+
+
+def test_two_prefixed_delisted_columns_are_rejected_as_ambiguous() -> None:
+    columns = "`ticker`, `label_delisted`, `flag_delisted`"
+
+    with pytest.raises(StockListError, match="Lebih dari satu kolom delisted"):
+        read_sql_dump(dump("('NCKL','0','0')", columns=columns))
+
+
 @pytest.mark.parametrize("column", ["kode", "kode_saham", "Kode Saham", "code", "symbol"])
 def test_common_spellings_of_the_code_column_are_accepted(column: str) -> None:
     result = read_sql_dump(dump("('NCKL','A',0)", columns=f"`{column}`, `nama`, `delisted`"))

@@ -74,6 +74,34 @@ def _match_column(available: list[str], candidates: tuple[str, ...]) -> str | No
     return None
 
 
+def _match_delisted_column(available: list[str], source: str) -> str:
+    """Find the delisted flag, accepting any column whose name contains it.
+
+    The real export calls it `label_delisted`. Enumerating spellings is how a
+    reader ends up refusing a perfectly good file, so the exact list is tried
+    first and a substring match is the fallback. Exact is preferred because a
+    table carrying both `delisted` and `is_delisted` should resolve to the plain
+    one, and two substring matches with no exact match is a genuine ambiguity
+    worth reporting rather than picking from.
+    """
+    exact = _match_column(available, _DELISTED_COLUMNS)
+    if exact is not None:
+        return exact
+
+    containing = [name for name in available if "delist" in _key(name)]
+    if len(containing) == 1:
+        return containing[0]
+    if len(containing) > 1:
+        raise StockListError(
+            f"Lebih dari satu kolom delisted di {source}: {', '.join(containing)}. "
+            "Sebutkan mana yang dipakai."
+        )
+    raise StockListError(
+        f"Kolom status delisted tidak ditemukan di {source}, jadi daftar tidak "
+        f"bisa difilter. Kolom yang ada: {', '.join(available)}"
+    )
+
+
 def _resolve_columns(
     available: list[str], *, source: str
 ) -> tuple[str, str | None]:
@@ -96,12 +124,7 @@ def _resolve_columns(
             "Sebutkan mana yang dipakai."
         )
 
-    delisted_column = _match_column(available, _DELISTED_COLUMNS)
-    if delisted_column is None:
-        raise StockListError(
-            f"Kolom status delisted tidak ditemukan di {source}, jadi daftar tidak "
-            f"bisa difilter. Kolom yang ada: {', '.join(available)}"
-        )
+    delisted_column = _match_delisted_column(available, source)
     return code_column, delisted_column
 
 
