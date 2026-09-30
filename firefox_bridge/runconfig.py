@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .pacing import MINIMUM_STEP_DELAY_SECONDS, parse_delay
+from .pacing import MINIMUM_STEP_DELAY_SECONDS, parse_delay, parse_minutes
 
 CONFIG_FILENAME = "firefox-bridge.toml"
 CONFIG_ENV = "FIREFOX_BRIDGE_CONFIG"
@@ -80,6 +80,8 @@ FIELDS: dict[str, Field] = {
         Field("delay", "delay"),
         Field("delay_max", "delay"),
         Field("session", "text"),
+        Field("run_minutes", "minutes"),
+        Field("rest_minutes", "minutes"),
         Field("download_dir", "text"),
         Field("report", "text"),
     )
@@ -198,6 +200,8 @@ def _coerce(kind: str, value: Any) -> Any:
         return value
     if kind == "delay":
         return parse_delay(value)
+    if kind == "minutes":
+        return parse_minutes(value)
     if kind == "year":
         return parse_year(value)
     if kind == "quarter":

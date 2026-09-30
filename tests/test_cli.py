@@ -294,3 +294,108 @@ def test_main_delegates_to_run(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert main(["--stocks", "NCKL"]) == 0
     assert seen == [["--stocks", "NCKL"]]
+
+
+def _fake_all_downloads(stock: str, tmp_path: Path):
+    def fake_download_all(
+        _client: Any,
+        code: str,
+        year: int,
+        download_dir: Path | None,
+    ) -> list[DownloadResult]:
+        return [DownloadResult(code, f"{code}/TW1", str(tmp_path))]
+
+    return fake_download_all
+
+
+def test_run_minutes_triggers_rest_between_stocks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sleeps: list[float] = []
+    state_seen_during_rest: list[bool] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        # Rehat terjadwal ~0.06 dtk (beda dari jeda antar-emiten 1 dtk):
+        # penanda rest_state.json harus ada selama rehat, lalu dihapus setelahnya.
+        if 0.055 < seconds < 0.065:
+            state_seen_during_rest.append(
+                (tmp_path / "rest_state.json").exists()
+            )
+
+    monkeypatch.setattr(cli, "download_all_detected", _fake_all_downloads("NCKL", tmp_path))
+    monkeypatch.setattr(cli.time, "sleep", fake_sleep)
+
+    exit_code = run(
+        [
+            "--stocks", "NCKL,BBCA",
+            "--year", "2025",
+            "--all-detected",
+            "--delay", "1",
+            "--run-minutes", "0.000001",  # window langsung habis setelah emiten pertama
+            "--rest-minutes", "0.001",    # ~0.06 detik
+            "--download-dir", str(tmp_path),
+            "--session", "sesi-rehat",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    long_sleeps = [s for s in sleeps if 0.055 < s < 0.065]
+    assert long_sleeps, "rehat terjadwal tidak terjadi"
+    assert all(pytest.approx(0.06) == s for s in long_sleeps)
+    assert state_seen_during_rest and all(state_seen_during_rest)
+    assert not (tmp_path / "rest_state.json").exists()  # dibersihkan setelah rehat
+
+
+def test_run_minutes_disabled_means_no_rest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(cli, "download_all_detected", _fake_all_downloads("NCKL", tmp_path))
+    monkeypatch.setattr(cli.time, "sleep", lambda s: sleeps.append(s))
+
+    exit_code = run(
+        [
+            "--stocks", "NCKL",
+            "--year", "2025",
+            "--all-detected",
+            "--delay", "1",
+            "--download-dir", str(tmp_path),
+            "--session", "sesi-tanpa-rehat",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert not (tmp_path / "rest_state.json").exists()
+
+
+def test_run_clears_stale_rest_state_on_startup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "rest_state.json").write_text('{"pause_until": 9999999999}', encoding="utf-8")
+    monkeypatch.setattr(cli, "download_all_detected", _fake_all_downloads("NCKL", tmp_path))
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    exit_code = run(
+        [
+            "--stocks", "NCKL",
+            "--year", "2025",
+            "--all-detected",
+            "--delay", "1",
+            "--download-dir", str(tmp_path),
+            "--session", "sesi-bersih",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert not (tmp_path / "rest_state.json").exists()
+
+
+def test_run_minutes_accepted_from_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = tmp_path / "run.toml"
+    config.write_text("run_minutes = 30\nrest_minutes = 30\n", encoding="utf-8")
+    args = _parse(["--stocks", "NCKL", "--all-detected"], config=str(config))
+    assert args.run_minutes == 30.0
+    assert args.rest_minutes == 30.0

@@ -53,6 +53,32 @@ def minimum_one_second(value: str) -> float:
         raise argparse.ArgumentTypeError(str(error)) from error
 
 
+def parse_minutes(value: object) -> float:
+    """Return a usable duration in minutes (>= 0), or raise ``ValueError``.
+
+    Shared by the ``--run-minutes``/``--rest-minutes`` arguments and the config
+    file, on purpose: a rule enforced on only one of the two paths is a rule
+    that will eventually be bypassed through the other one.
+    """
+    try:
+        minutes = float(str(value))
+    except (TypeError, ValueError):
+        raise ValueError(f"durasi menit tidak valid: {value!r}") from None
+    if minutes != minutes or minutes == float("inf"):  # NaN / inf
+        raise ValueError(f"durasi menit tidak valid: {value!r}")
+    if minutes < 0:
+        raise ValueError("durasi menit tidak boleh negatif")
+    return minutes
+
+
+def nonnegative_minutes(value: str) -> float:
+    """argparse type for --run-minutes/--rest-minutes (0 = nonaktif)."""
+    try:
+        return parse_minutes(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def resolve_stock_delay(delay_min: float, delay_max: float | None = None) -> float:
     """Return the actual pause for one inter-stock delay.
 

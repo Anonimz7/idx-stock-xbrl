@@ -11,6 +11,7 @@ After installation the same run is available as ``firefox-bridge-download``.
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import sys
 import time
@@ -69,7 +70,11 @@ from firefox_bridge.downloader.staging import (
     staging_root,
 )
 from firefox_bridge.idx.link_parser import quarter_from_report_href
-from firefox_bridge.pacing import minimum_one_second, sleep_between_stocks
+from firefox_bridge.pacing import (
+    minimum_one_second,
+    nonnegative_minutes,
+    sleep_between_stocks,
+)
 from firefox_bridge.progress import detail, notice, problem, progress
 from firefox_bridge.stocksource import StockListError, read_stock_list
 from firefox_bridge.validation import ValidationError, normalize_stock_code
@@ -190,6 +195,22 @@ def build_parser() -> argparse.ArgumentParser:
             "When set, the delay between stocks is randomized uniformly "
             "between --delay (min) and --delay-max (max) seconds."
         ),
+    )
+    parser.add_argument(
+        "--run-minutes",
+        type=nonnegative_minutes,
+        default=None,
+        help=(
+            "Run this many minutes, then rest automatically between stocks. "
+            "After each stock, once the cumulative run time reaches this value "
+            "the CLI rests for --rest-minutes minutes. 0 or unset = disabled."
+        ),
+    )
+    parser.add_argument(
+        "--rest-minutes",
+        type=nonnegative_minutes,
+        default=None,
+        help="Rest length per cycle (minutes) when --run-minutes is active.",
     )
     parser.add_argument(
         "--session",
@@ -541,6 +562,53 @@ def _write_report(
     detail(f"laporan run ditulis: {written}", report=path)
 
 
+def _rest_state_path(download_dir: str):
+    return download_root(download_dir) / "rest_state.json"
+
+
+def clear_rest_state(download_dir: str) -> None:
+    """Hapus penanda rehat basi (mis. dari run yang mati saat rehat)."""
+    try:
+        _rest_state_path(download_dir).unlink()
+    except OSError:
+        pass
+
+
+def write_rest_state(download_dir: str, pause_until_epoch: float, reason: str, session_name: str) -> None:
+    """Tulis penanda rehat agar cron laporan 30 menit tahu status ISTIRAHAT."""
+    payload = {
+        "pause_until": pause_until_epoch,
+        "reason": reason,
+        "session": session_name,
+    }
+    _rest_state_path(download_dir).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def take_scheduled_rest(args, download_dir: str, session_name: str) -> float:
+    """Rehat terjadwal antar-emiten; kembalikan awal window jalan berikutnya."""
+    rest_minutes = args.rest_minutes or 0
+    if rest_minutes <= 0:
+        return time.monotonic()
+    pause_until = time.time() + rest_minutes * 60
+    write_rest_state(
+        download_dir,
+        pause_until,
+        f"rehat {rest_minutes:g} menit",
+        session_name,
+    )
+    progress(
+        f"REHAT: {rest_minutes:g} menit, lanjut otomatis setelahnya",
+        phase="rest",
+        session=session_name,
+    )
+    try:
+        time.sleep(rest_minutes * 60)
+    finally:
+        clear_rest_state(download_dir)
+    progress("REHAT SELESAI: lanjut unduhan", phase="rest_done", session=session_name)
+    return time.monotonic()
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     args = build_parser().parse_args(argv)
@@ -684,6 +752,11 @@ def run(argv: Sequence[str] | None = None) -> int:
         else:
             progress(f"Sesi '{session_name}' dilanjutkan (belum ada emiten diproses)")
 
+    # Hapus penanda rehat basi (run sebelumnya mati saat rehat) dan mulai
+    # window jalan untuk pola 30-menit-jalan/30-menit-rehat.
+    clear_rest_state(download_dir)
+    window_start = time.monotonic()
+
     # Snapshot sekali di awal: pre-check di bawah hanya peduli pada status
     # sebelum run ini (setiap emiten hanya dikunjungi sekali per run).
     history = load_download_history(download_dir)
@@ -776,6 +849,10 @@ def run(argv: Sequence[str] | None = None) -> int:
             mark_stock_done(session, stock)
             save_session(download_dir, session)
         sleep_between_stocks(args.delay, args.delay_max)
+        # Rehat terjadwal antar-emiten: emiten yang sedang berjalan selalu
+        # diselesaikan dulu, rehat baru mulai setelah jeda antar-emiten.
+        if args.run_minutes and time.monotonic() - window_start >= args.run_minutes * 60:
+            window_start = take_scheduled_rest(args, download_dir, session_name)
 
     # Again at the end. The opening scan keeps yesterday's wreckage from being
     # mistaken for a fresh download, but it leaves behind the empty year folders
