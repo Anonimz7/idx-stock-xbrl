@@ -120,3 +120,41 @@ def record_download_history(
         COMPLETED_AT_KEY: datetime.now(UTC).isoformat(),
     }
     return save_download_history(history, download_dir)
+
+
+def stock_year_complete(
+    history: dict[str, Any],
+    stock: str,
+    year: int,
+    download_dir: Path | None = None,
+) -> bool:
+    """Return True when every recorded quarter for one stock/year is valid.
+
+    A quarter counts as valid only when its history entry exists, the final
+    file is still on disk and non-empty, and the SHA-256 matches the recorded
+    one. At least one quarter must be recorded; a stock with no history at all
+    is never "complete", so its page still gets visited (and retried).
+    """
+    stock_data = history["downloads"].get(stock.upper())
+    if not isinstance(stock_data, dict):
+        return False
+    year_data = stock_data.get(str(year))
+    if not isinstance(year_data, dict) or not year_data:
+        return False
+    root = download_root(download_dir).resolve()
+    for entry in year_data.values():
+        if not isinstance(entry, dict):
+            return False
+        relative = entry.get(FILE_KEY)
+        if not relative:
+            return False
+        final_path = root / str(relative)
+        try:
+            if not (final_path.is_file() and final_path.stat().st_size > 0):
+                return False
+        except OSError:
+            return False
+        recorded_hash = str(entry.get(SHA256_KEY) or "")
+        if recorded_hash and file_sha256(final_path) != recorded_hash:
+            return False
+    return True

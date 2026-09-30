@@ -62,7 +62,7 @@ def _sql(tmp_path: Path, body: str = DUMP) -> Path:
 def test_a_sql_file_supplies_the_stock_codes(_no_browser: list[str], tmp_path: Path) -> None:
     code = run([
         "--stocks-file", str(_sql(tmp_path)), "--year", "2025", "--all-detected",
-        "--download-dir", str(tmp_path / "dl"),
+        "--download-dir", str(tmp_path / "dl"), "--session", "uji",
     ])
 
     assert code == EXIT_SUCCESS
@@ -75,7 +75,7 @@ def test_delisted_rows_never_reach_the_browser(
     """A delisted code still has a profile page, so without this the batch
     quietly spends a paced workflow on a company that no longer trades."""
     run(["--stocks-file", str(_sql(tmp_path)), "--year", "2025", "--all-detected",
-         "--download-dir", str(tmp_path / "dl")])
+         "--download-dir", str(tmp_path / "dl"), "--session", "uji"])
 
     assert "BNI" not in _no_browser
     assert "BLBI" not in _no_browser
@@ -88,7 +88,7 @@ def test_an_empty_export_is_rejected_with_a_reason(
     """Returning an empty list here would download nothing and exit 0, which
     looks like success."""
     code = run(["--stocks-file", str(_sql(tmp_path, EMPTY_DUMP)), "--year", "2025",
-                "--all-detected", "--download-dir", str(tmp_path / "dl")])
+                "--all-detected", "--download-dir", str(tmp_path / "dl"), "--session", "uji"])
 
     assert code == EXIT_INVALID_INPUT
     assert _no_browser == []
@@ -99,7 +99,7 @@ def test_a_file_is_merged_with_inline_codes(
     _no_browser: list[str], tmp_path: Path
 ) -> None:
     run(["--stocks", "TLKM", "--stocks-file", str(_sql(tmp_path)), "--year", "2025",
-         "--all-detected", "--download-dir", str(tmp_path / "dl")])
+         "--all-detected", "--download-dir", str(tmp_path / "dl"), "--session", "uji"])
 
     assert _no_browser == ["TLKM", "NCKL", "BBCA"]
 
@@ -109,7 +109,7 @@ def test_a_csv_file_is_accepted(_no_browser: list[str], tmp_path: Path) -> None:
     path.write_text("kode,nama,delisted\nAGRO,AGRO,0\nBNI,BANK NEGARA,1\n", encoding="utf-8")
 
     run(["--stocks-file", str(path), "--year", "2025", "--all-detected",
-         "--download-dir", str(tmp_path / "dl")])
+         "--download-dir", str(tmp_path / "dl"), "--session", "uji"])
 
     assert _no_browser == ["AGRO"]
 
@@ -118,7 +118,7 @@ def test_a_missing_file_is_rejected_not_ignored(
     _no_browser: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code = run(["--stocks-file", str(tmp_path / "tidak-ada.sql"), "--year", "2025",
-                "--all-detected", "--download-dir", str(tmp_path / "dl")])
+                "--all-detected", "--download-dir", str(tmp_path / "dl"), "--session", "uji"])
 
     assert code == EXIT_INVALID_INPUT
     assert _no_browser == []
@@ -147,7 +147,7 @@ def test_the_health_gate_still_runs_before_any_stock(
     cli.FirefoxBridgeClient = lambda *_a, **_k: Disconnected()  # type: ignore[assignment]
 
     code = run(["--stocks-file", str(_sql(tmp_path)), "--year", "2025", "--all-detected",
-                "--download-dir", str(tmp_path / "dl")])
+                "--download-dir", str(tmp_path / "dl"), "--session", "uji"])
 
     assert code == EXIT_BRIDGE_UNAVAILABLE
     assert _no_browser == []

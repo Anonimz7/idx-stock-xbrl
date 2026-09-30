@@ -364,3 +364,59 @@ def test_recorded_entry_survives_a_reload(tmp_path: Path) -> None:
         2025,
         1,
     )
+
+
+def _complete_stock(history: dict[str, Any], tmp_path: Path, stock: str = "NCKL") -> None:
+    """Record all four quarters of 2025 with real files on disk."""
+    for quarter in (1, 2, 3, 4):
+        path = final_report_path(stock, 2025, quarter, tmp_path)
+        path.write_bytes(CONTENT)
+        record_download_history(history, stock, 2025, quarter, "u", path, tmp_path)
+
+
+def test_stock_year_complete_when_all_quarters_valid(tmp_path: Path) -> None:
+    from firefox_bridge.downloader.history import stock_year_complete
+
+    history = empty_history()
+    _complete_stock(history, tmp_path)
+
+    assert stock_year_complete(history, "nckl", 2025, tmp_path) is True
+
+
+def test_stock_year_complete_false_without_any_history(tmp_path: Path) -> None:
+    from firefox_bridge.downloader.history import stock_year_complete
+
+    assert stock_year_complete(empty_history(), "NCKL", 2025, tmp_path) is False
+
+
+def test_stock_year_complete_false_when_a_file_is_missing(tmp_path: Path) -> None:
+    from firefox_bridge.downloader.history import stock_year_complete
+
+    history = empty_history()
+    _complete_stock(history, tmp_path)
+    final_report_path("NCKL", 2025, 3, tmp_path).unlink()
+
+    assert stock_year_complete(history, "NCKL", 2025, tmp_path) is False
+
+
+def test_stock_year_complete_false_when_a_hash_changed(tmp_path: Path) -> None:
+    from firefox_bridge.downloader.history import stock_year_complete
+
+    history = empty_history()
+    _complete_stock(history, tmp_path)
+    final_report_path("NCKL", 2025, 2, tmp_path).write_bytes(b"corrupted!")
+
+    assert stock_year_complete(history, "NCKL", 2025, tmp_path) is False
+
+
+def test_stock_year_complete_checks_recorded_quarters_only(tmp_path: Path) -> None:
+    from firefox_bridge.downloader.history import stock_year_complete
+
+    history = empty_history()
+    path = final_report_path("NCKL", 2025, 1, tmp_path)
+    path.write_bytes(CONTENT)
+    record_download_history(history, "NCKL", 2025, 1, "u", path, tmp_path)
+    # Satu kuartal tercatat dan valid -> lengkap menurut definisi
+    # (semua yang tercatat valid); nol kuartal -> tidak lengkap.
+    assert stock_year_complete(history, "NCKL", 2025, tmp_path) is True
+    assert stock_year_complete(history, "BBCA", 2025, tmp_path) is False

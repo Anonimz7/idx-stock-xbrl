@@ -11,6 +11,7 @@ After installation the same run is available as ``firefox-bridge-download``.
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -29,7 +30,19 @@ from firefox_bridge.downloader.errors import (
     ExtensionDisconnected,
 )
 from firefox_bridge.downloader.health import EXTENSION_UNAVAILABLE_STATUS, ensure_extension_ready
-from firefox_bridge.downloader.history import load_download_history, save_download_history
+from firefox_bridge.downloader.history import (
+    load_download_history,
+    save_download_history,
+    stock_year_complete,
+)
+from firefox_bridge.downloader.session import (
+    load_session,
+    mark_stock_done,
+    new_session,
+    prompt_session_name,
+    save_session,
+    validate_session_name,
+)
 from firefox_bridge.downloader.models import (
     STATUS_DOWNLOADED,
     STATUS_SKIPPED,
@@ -56,7 +69,7 @@ from firefox_bridge.downloader.staging import (
     staging_root,
 )
 from firefox_bridge.idx.link_parser import quarter_from_report_href
-from firefox_bridge.pacing import minimum_one_second
+from firefox_bridge.pacing import minimum_one_second, sleep_between_stocks
 from firefox_bridge.progress import detail, notice, problem, progress
 from firefox_bridge.stocksource import StockListError, read_stock_list
 from firefox_bridge.validation import ValidationError, normalize_stock_code
@@ -168,6 +181,25 @@ def build_parser() -> argparse.ArgumentParser:
         type=minimum_one_second,
         default=None,
         help="Delay between stocks in seconds (minimum 1)",
+    )
+    parser.add_argument(
+        "--delay-max",
+        type=minimum_one_second,
+        default=None,
+        help=(
+            "When set, the delay between stocks is randomized uniformly "
+            "between --delay (min) and --delay-max (max) seconds."
+        ),
+    )
+    parser.add_argument(
+        "--session",
+        type=str,
+        default=None,
+        help=(
+            "Nama sesi run ini. Sesi yang sudah ada dilanjutkan dari emiten "
+            "terakhir yang diproses (tanpa mengulang); nama baru mulai dari awal. "
+            "Tanpa flag ini program menanyakan nama sesi secara interaktif."
+        ),
     )
     parser.add_argument(
         "--report",
@@ -423,7 +455,7 @@ def _run_dry_run(
             f"{len(plans) - len(would_fetch)} dilewati",
             stock=stock, year=args.year, would_download=len(would_fetch),
         )
-        time.sleep(args.delay)
+        sleep_between_stocks(args.delay, args.delay_max)
 
     total = sum(1 for item in summary.results if item.status == STATUS_DOWNLOADED)
     progress(
@@ -612,6 +644,50 @@ def run(argv: Sequence[str] | None = None) -> int:
             client, stock_codes, args, download_dir, summary, failures, _finish
         )
 
+    # --- Sesi: nama run, lanjut dari terakhir tanpa mengulang ---
+    session_name = args.session
+    if session_name is None:
+        if sys.stdin.isatty():
+            try:
+                session_name = prompt_session_name(download_dir)
+            except ValueError as error:
+                problem(f"Nama sesi: {error}")
+                return _finish(EXIT_INVALID_INPUT)
+        else:
+            problem(
+                "Butuh --session NAMA untuk run non-interaktif "
+                "(tanpa --session, program menanyakan nama sesi di terminal)."
+            )
+            return _finish(EXIT_INVALID_INPUT)
+    try:
+        session_name = validate_session_name(session_name)
+    except ValueError as error:
+        problem(f"Nama sesi tidak valid: {error}")
+        return _finish(EXIT_INVALID_INPUT)
+    session = load_session(download_dir, session_name)
+    if session is None:
+        session = new_session(session_name, args.year)
+        save_session(download_dir, session)
+        progress(f"Sesi baru '{session_name}' untuk tahun {args.year}")
+    else:
+        already = set(session.get("stocks_done", []))
+        if already:
+            remaining = [code for code in stock_codes if code not in already]
+            progress(
+                f"Sesi '{session_name}': lanjut dari {session.get('last_stock')} "
+                f"({len(already)} emiten sudah diproses, {len(remaining)} tersisa)"
+            )
+            stock_codes = remaining
+            if not stock_codes:
+                progress(f"Sesi '{session_name}' sudah memproses semua emiten.")
+                return _finish(EXIT_SUCCESS)
+        else:
+            progress(f"Sesi '{session_name}' dilanjutkan (belum ada emiten diproses)")
+
+    # Snapshot sekali di awal: pre-check di bawah hanya peduli pada status
+    # sebelum run ini (setiap emiten hanya dikunjungi sekali per run).
+    history = load_download_history(download_dir)
+
     # Before anything else: a run killed mid-download leaves a partial file at
     # the exact path this run is about to download to, and the completion check
     # would read that leftover as a finished file. Cleared up front, every
@@ -629,6 +705,20 @@ def run(argv: Sequence[str] | None = None) -> int:
         notice(f"  - dipertahankan (sedang diunduh): {path.name}", reason="in-flight")
 
     for stock in stock_codes:
+        if all_detected and stock_year_complete(
+            history, stock, args.year, download_dir
+        ):
+            # Emiten yang tahunnya sudah lengkap di history tidak perlu
+            # dikunjungi lagi: hemat satu page-load IDX per emiten.
+            progress(
+                f"STEP SKIP: {stock} {args.year} sudah lengkap di history; "
+                "lewati tanpa buka halaman",
+                stock=stock,
+                year=args.year,
+            )
+            mark_stock_done(session, stock)
+            save_session(download_dir, session)
+            continue
         try:
             if all_detected:
                 results = download_all_detected(
@@ -673,14 +763,19 @@ def run(argv: Sequence[str] | None = None) -> int:
                 year=args.year,
                 error_type=kind,
             )
+            mark_stock_done(session, stock)
+            save_session(download_dir, session)
             if failure.fatal:
                 # Nothing after this would work either. Say so once and stop,
                 # rather than repeating the same failure for every stock left.
                 problem(f"  -> run dihentikan: {failure}")
                 summary.fatal_error = str(failure)
-                time.sleep(args.delay)
+                sleep_between_stocks(args.delay, args.delay_max)
                 break
-        time.sleep(args.delay)
+        else:
+            mark_stock_done(session, stock)
+            save_session(download_dir, session)
+        sleep_between_stocks(args.delay, args.delay_max)
 
     # Again at the end. The opening scan keeps yesterday's wreckage from being
     # mistaken for a fresh download, but it leaves behind the empty year folders

@@ -149,6 +149,7 @@ def test_a_report_is_written_when_asked(
     code = run([
         "--stocks", "NCKL", "--year", "2025", "--all-detected",
         "--report", str(target), "--download-dir", str(tmp_path),
+        "--session", "uji",
     ])
 
     assert code == 0
@@ -164,9 +165,12 @@ def test_no_report_file_means_no_file(
     _patch(monkeypatch, [_result(1)])
 
     run(["--stocks", "NCKL", "--year", "2025", "--all-detected",
-         "--download-dir", str(tmp_path)])
+         "--download-dir", str(tmp_path), "--session", "uji"])
 
-    assert not list(tmp_path.rglob("*.json"))
+    leftovers = [
+        path for path in tmp_path.rglob("*.json") if "sessions" not in path.parts
+    ]
+    assert not leftovers
 
 
 def test_the_report_never_appears_in_the_progress_output(
@@ -177,7 +181,7 @@ def test_the_report_never_appears_in_the_progress_output(
     target = tmp_path / "run.json"
 
     run(["--stocks", "NCKL", "--year", "2025", "--all-detected",
-         "--report", str(target), "--download-dir", str(tmp_path)])
+         "--report", str(target), "--download-dir", str(tmp_path), "--session", "uji"])
 
     captured = capsys.readouterr()
     assert "schema_version" not in captured.out
@@ -200,7 +204,7 @@ def test_a_report_is_written_even_when_the_extension_is_missing(
     target = tmp_path / "run.json"
 
     code = run(["--stocks", "NCKL", "--year", "2025", "--all-detected",
-                "--report", str(target), "--download-dir", str(tmp_path)])
+                "--report", str(target), "--download-dir", str(tmp_path), "--session", "uji"])
 
     assert code == EXIT_BRIDGE_UNAVAILABLE
     report = json.loads(target.read_text(encoding="utf-8"))
@@ -222,7 +226,7 @@ def test_a_failure_reaches_the_report(
     target = tmp_path / "run.json"
 
     code = run(["--stocks", "NCKL", "--year", "2025", "--all-detected",
-                "--report", str(target), "--download-dir", str(tmp_path)])
+                "--report", str(target), "--download-dir", str(tmp_path), "--session", "uji"])
 
     assert code == EXIT_FAILURES
     report = json.loads(target.read_text(encoding="utf-8"))
@@ -243,7 +247,7 @@ def test_an_unwritable_report_does_not_fail_the_run(
 
     code = run(["--stocks", "NCKL", "--year", "2025", "--all-detected",
                 "--report", str(blocker / "sub" / "run.json"),
-                "--download-dir", str(tmp_path)])
+                "--download-dir", str(tmp_path), "--session", "uji"])
 
     assert code == 0
     assert "laporan tidak bisa ditulis" in capsys.readouterr().err

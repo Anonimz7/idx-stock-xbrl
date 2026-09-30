@@ -78,6 +78,8 @@ FIELDS: dict[str, Field] = {
         Field("all_detected", "bool"),
         Field("dry_run", "bool"),
         Field("delay", "delay"),
+        Field("delay_max", "delay"),
+        Field("session", "text"),
         Field("download_dir", "text"),
         Field("report", "text"),
     )

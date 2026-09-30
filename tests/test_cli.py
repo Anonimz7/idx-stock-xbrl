@@ -99,6 +99,8 @@ def test_run_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
             "1",
             "--download-dir",
             str(tmp_path),
+            "--session",
+            "sesi-lapor-ok",
         ]
     )
 
@@ -121,7 +123,10 @@ def test_run_continues_after_a_failed_stock(
     monkeypatch.setattr(cli, "download_all_detected", fake_download_all)
     monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
 
-    exit_code = run(["--stocks", "NCKL,BBCA", "--all-detected", "--delay", "1"])
+    exit_code = run(
+        ["--stocks", "NCKL,BBCA", "--all-detected", "--delay", "1",
+         "--session", "sesi-lanjut-gagal"]
+    )
 
     assert attempted == ["NCKL", "BBCA"]
     assert exit_code == EXIT_FAILURES
@@ -143,8 +148,117 @@ def test_run_downloads_a_single_quarter(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(cli, "download_stock", fake_download_stock)
     monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
 
-    assert run(["--stocks", "NCKL", "--quarter", "2", "--delay", "1"]) == EXIT_SUCCESS
+    assert (
+        run(
+            [
+                "--stocks",
+                "NCKL",
+                "--quarter",
+                "2",
+                "--delay",
+                "1",
+                "--session",
+                "sesi-kuartal",
+            ]
+        )
+        == EXIT_SUCCESS
+    )
     assert seen == [2]
+
+
+def test_run_skips_history_complete_stock_without_page_visit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Emiten yang tahunnya sudah lengkap di history tidak dibuka halamannya."""
+    from firefox_bridge.downloader.history import empty_history, record_download_history
+    from firefox_bridge.downloader.paths import final_report_path
+    from firefox_bridge.downloader.session import load_session
+
+    history = empty_history()
+    path = final_report_path("NCKL", 2025, 1, tmp_path)
+    path.write_bytes(b"PK\x03\x04test")
+    record_download_history(history, "NCKL", 2025, 1, "u", path, tmp_path)
+
+    calls: list[str] = []
+
+    def fake_download_all(
+        _client: Any, stock: str, _year: int, _download_dir: Path | None
+    ) -> list[DownloadResult]:
+        calls.append(stock)
+        return []
+
+    monkeypatch.setattr(cli, "download_all_detected", fake_download_all)
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    exit_code = run(
+        [
+            "--stocks",
+            "NCKL,BBCA",
+            "--year",
+            "2025",
+            "--all-detected",
+            "--delay",
+            "1",
+            "--download-dir",
+            str(tmp_path),
+            "--session",
+            "sesi-skip-uji",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert calls == ["BBCA"], "NCKL harus dilewati tanpa membuka halaman"
+    session = load_session(tmp_path, "sesi-skip-uji")
+    assert session is not None
+    assert session["stocks_done"] == ["NCKL", "BBCA"]
+
+
+def test_run_resumes_session_from_last_stock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Sesi yang sudah ada melanjutkan dari emiten terakhir, tanpa mengulang."""
+    from firefox_bridge.downloader.session import (
+        load_session,
+        mark_stock_done,
+        new_session,
+        save_session,
+    )
+
+    session = new_session("sesi-lanjut", 2025)
+    mark_stock_done(session, "NCKL")
+    save_session(tmp_path, session)
+
+    attempted: list[str] = []
+
+    def fake_download_all(_client: Any, stock: str, *_args: Any) -> list[DownloadResult]:
+        attempted.append(stock)
+        return []
+
+    monkeypatch.setattr(cli, "download_all_detected", fake_download_all)
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    exit_code = run(
+        [
+            "--stocks",
+            "NCKL,BBCA,BBRI",
+            "--year",
+            "2025",
+            "--all-detected",
+            "--delay",
+            "1",
+            "--download-dir",
+            str(tmp_path),
+            "--session",
+            "sesi-lanjut",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert attempted == ["BBCA", "BBRI"]
+    reloaded = load_session(tmp_path, "sesi-lanjut")
+    assert reloaded is not None
+    assert reloaded["stocks_done"] == ["NCKL", "BBCA", "BBRI"]
+    assert reloaded["last_stock"] == "BBRI"
 
 
 def test_run_summary_exit_code() -> None:

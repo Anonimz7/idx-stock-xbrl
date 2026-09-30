@@ -154,7 +154,7 @@ def test_a_disconnected_extension_exits_3_before_touching_the_browser(
     client.statuses.append({"connected": False})
     _patch_client(monkeypatch, client)
 
-    code = run(["--stocks", "NCKL", "--year", "2025", "--all-detected"])
+    code = run(["--stocks", "NCKL", "--year", "2025", "--all-detected", "--session", "uji"])
 
     assert code == EXIT_BRIDGE_UNAVAILABLE
     output = capsys.readouterr().err
@@ -172,7 +172,7 @@ def test_a_valid_run_still_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *_args, **_kwargs: [],
     )
 
-    assert run(["--stocks", "NCKL", "--year", "2025", "--all-detected"]) == EXIT_SUCCESS
+    assert run(["--stocks", "NCKL", "--year", "2025", "--all-detected", "--session", "uji"]) == EXIT_SUCCESS
 
 
 def test_an_invalid_stock_code_still_exits_2(
@@ -206,7 +206,7 @@ def test_a_fatal_failure_mid_run_exits_3_and_stops_early(
     monkeypatch.setattr("firefox_bridge.cli.download_all_detected", explode)
     monkeypatch.setattr("time.sleep", lambda _s: None)
 
-    code = run(["--stocks", "NCKL,BBCA,ITMG", "--year", "2025", "--all-detected", "--delay", "1"])
+    code = run(["--stocks", "NCKL,BBCA,ITMG", "--year", "2025", "--all-detected", "--delay", "1", "--session", "uji"])
 
     assert code == EXIT_BRIDGE_UNAVAILABLE
     assert attempted == ["NCKL"], "the run kept going after a fatal failure"
@@ -231,7 +231,7 @@ def test_a_non_fatal_failure_exits_1_and_continues(
     monkeypatch.setattr("firefox_bridge.cli.download_all_detected", sometimes)
     monkeypatch.setattr("time.sleep", lambda _s: None)
 
-    code = run(["--stocks", "NCKL,BBCA,ITMG", "--year", "2025", "--all-detected", "--delay", "1"])
+    code = run(["--stocks", "NCKL,BBCA,ITMG", "--year", "2025", "--all-detected", "--delay", "1", "--session", "uji"])
 
     assert code == EXIT_FAILURES
     assert attempted == ["NCKL", "BBCA", "ITMG"], "a per-stock failure stopped the batch"
@@ -252,7 +252,7 @@ def test_the_failure_line_names_the_error_type(
 
     monkeypatch.setattr("firefox_bridge.cli.download_all_detected", explode)
 
-    run(["--stocks", "NCKL", "--year", "2025", "--all-detected", "--delay", "1"])
+    run(["--stocks", "NCKL", "--year", "2025", "--all-detected", "--delay", "1", "--session", "uji"])
 
     assert "IntegrityError" in capsys.readouterr().err
 

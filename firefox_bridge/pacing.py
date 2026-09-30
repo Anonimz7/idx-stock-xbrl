@@ -9,6 +9,7 @@ dropdown options asynchronously.
 from __future__ import annotations
 
 import argparse
+import random
 import time
 
 from .progress import progress
@@ -50,3 +51,20 @@ def minimum_one_second(value: str) -> float:
         return parse_delay(value)
     except ValueError as error:
         raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def resolve_stock_delay(delay_min: float, delay_max: float | None = None) -> float:
+    """Return the actual pause for one inter-stock delay.
+
+    Fixed at ``delay_min`` when ``delay_max`` is None; otherwise uniform random
+    in [delay_min, delay_max]. A ``delay_max`` below ``delay_min`` is clamped so
+    the range can never invert.
+    """
+    if delay_max is None:
+        return delay_min
+    return random.uniform(delay_min, max(delay_min, delay_max))
+
+
+def sleep_between_stocks(delay_min: float, delay_max: float | None = None) -> None:
+    """Pause between stocks, honoring the randomized range when configured."""
+    time.sleep(resolve_stock_delay(delay_min, delay_max))
