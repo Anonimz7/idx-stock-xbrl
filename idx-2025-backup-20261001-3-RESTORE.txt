@@ -1,0 +1,14 @@
+Cara restore backup unduhan IDX 2025 (branch backup/20261001-3):
+
+1. Clone hanya branch ini:
+   git clone --branch backup/20261001-3 --single-branch https://github.com/Anonimz7/idx-stock-xbrl idx-restore
+   cd idx-restore
+
+2. Gabungkan part lalu ekstrak:
+   cat idx-2025-backup-20261001-3.tar.gz.part-* > idx-2025-backup-20261001-3.tar.gz
+   tar -xzf idx-2025-backup-20261001-3.tar.gz
+
+3. Hasil: folder downloads-2025/saham (3.401 ZIP), downloads-2025/sessions,
+   downloads-2025/run.log, downloads-2025/run-1.log.
+
+Total: 39 part @20MB, ~774 MiB.
