@@ -1,0 +1,11 @@
+RESTORE — Backup unduhan IDX 2025 final (2026-10-02)
+=====================================================
+Branch: backup/20261002 (repo Anonimz7/idx-stock-xbrl)
+Isi: 3.488 ZIP laporan keuangan 2025 (963 emiten, sesi utama + retry) +
+     download_history.json + run.log + sessions.
+Tidak termasuk: run.pid (file PID basi).
+
+Cara restore:
+  cat idx-2025-backup-20261002.tar.gz.part-* > idx-2025-backup-20261002.tar.gz
+  tar -xzf idx-2025-backup-20261002.tar.gz
+Hasil: folder downloads-2025/ (saham/, sessions/, download_history.json, run.log).
