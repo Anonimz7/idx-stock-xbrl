@@ -1,0 +1,47 @@
+RESTORE — Backup unduhan IDX 2025
+=================================
+Tanggal backup : 2026-10-01 ~10:15 WIB (saat downloader STOP karena blokir IDX)
+Isi            : downloads-2025/ — 2.834 ZIP laporan keuangan IDX 2025 (TW1-TW4),
+                 sessions/sesi-2025-utama.json, download_history.json, run.log
+Dikecualikan   : rest_state.json, run.pid, block_state.json
+Ukuran tarball : 674899895 byte
+Jumlah part    : 33 (@20MB, terakhir lebih kecil)
+
+Cara restore:
+  cat idx-2025-backup-20261001-2.tar.gz.part-* > idx-2025-backup-20261001-2.tar.gz
+  tar -xzf idx-2025-backup-20261001-2.tar.gz
+
+Daftar part:
+idx-2025-backup-20261001-2.tar.gz.part-aa
+idx-2025-backup-20261001-2.tar.gz.part-ab
+idx-2025-backup-20261001-2.tar.gz.part-ac
+idx-2025-backup-20261001-2.tar.gz.part-ad
+idx-2025-backup-20261001-2.tar.gz.part-ae
+idx-2025-backup-20261001-2.tar.gz.part-af
+idx-2025-backup-20261001-2.tar.gz.part-ag
+idx-2025-backup-20261001-2.tar.gz.part-ah
+idx-2025-backup-20261001-2.tar.gz.part-ai
+idx-2025-backup-20261001-2.tar.gz.part-aj
+idx-2025-backup-20261001-2.tar.gz.part-ak
+idx-2025-backup-20261001-2.tar.gz.part-al
+idx-2025-backup-20261001-2.tar.gz.part-am
+idx-2025-backup-20261001-2.tar.gz.part-an
+idx-2025-backup-20261001-2.tar.gz.part-ao
+idx-2025-backup-20261001-2.tar.gz.part-ap
+idx-2025-backup-20261001-2.tar.gz.part-aq
+idx-2025-backup-20261001-2.tar.gz.part-ar
+idx-2025-backup-20261001-2.tar.gz.part-as
+idx-2025-backup-20261001-2.tar.gz.part-at
+idx-2025-backup-20261001-2.tar.gz.part-au
+idx-2025-backup-20261001-2.tar.gz.part-av
+idx-2025-backup-20261001-2.tar.gz.part-aw
+idx-2025-backup-20261001-2.tar.gz.part-ax
+idx-2025-backup-20261001-2.tar.gz.part-ay
+idx-2025-backup-20261001-2.tar.gz.part-az
+idx-2025-backup-20261001-2.tar.gz.part-ba
+idx-2025-backup-20261001-2.tar.gz.part-bb
+idx-2025-backup-20261001-2.tar.gz.part-bc
+idx-2025-backup-20261001-2.tar.gz.part-bd
+idx-2025-backup-20261001-2.tar.gz.part-be
+idx-2025-backup-20261001-2.tar.gz.part-bf
+idx-2025-backup-20261001-2.tar.gz.part-bg
