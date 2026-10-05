@@ -42,6 +42,19 @@ class DownloadRequest(RequestModel):
     filename: str | None = None
 
 
+class DownloadUrlRequest(RequestModel):
+    """A download addressed by URL rather than by a snapshot reference.
+
+    The ref-based route exists to fetch whatever link the page actually rendered.
+    This one skips the page entirely: the caller already knows the URL, so
+    resolving an element first would only reintroduce the staleness that
+    ``_resolve_current_ref`` exists to work around.
+    """
+
+    url: str = Field(min_length=1)
+    filename: str = Field(min_length=1)
+
+
 class SelectDropdownRequest(RequestModel):
     ref: str | int
     value: str
@@ -69,6 +82,7 @@ __all__ = [
     "AuthenticateMessage",
     "ClickRequest",
     "DownloadRequest",
+    "DownloadUrlRequest",
     "ExtensionResponse",
     "FillRequest",
     "NavigateRequest",

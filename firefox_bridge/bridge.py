@@ -38,6 +38,7 @@ _COMMANDS = frozenset(
         "tab.select_dropdown",
         "tab.select_dropdown_option",
         "tab.download",
+        "download.by_url",
     }
 )
 _HTTP_POLL_SECONDS = 1.0

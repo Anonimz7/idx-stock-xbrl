@@ -692,6 +692,61 @@ const methodHandlers = new Map([
       href: result.href,
       filename: result.filename
     };
+  }],
+  // Addressed by URL instead of by a snapshot ref. No page is read, so there is
+  // no element to go stale: the caller has already decided exactly which file it
+  // wants. `filename` is mandatory because Firefox otherwise picks its own name,
+  // and the Python side resolves the staged file by the name it asked for.
+  ["download.by_url", async (params) => {
+    const p = requireObjectParams(params);
+    const urlParam = firstParam(p, "url");
+    const filenameParam = firstParam(p, "filename");
+    if (!urlParam) {
+      throw new BridgeError("INVALID_PARAMS", "url is required for download.by_url");
+    }
+    if (!filenameParam) {
+      throw new BridgeError("INVALID_PARAMS", "filename is required for download.by_url");
+    }
+    const url = validatePageUrl(urlParam);
+    const filename = String(filenameParam).trim();
+    // A relative path only. `..` or a leading separator would aim the write
+    // outside the download root, which is the one place this route must not go.
+    if (filename.startsWith("/") || filename.includes("..")) {
+      throw new BridgeError("INVALID_PARAMS", "filename must stay inside the download root");
+    }
+    if (
+      typeof browser === "undefined" ||
+      !browser.downloads ||
+      typeof browser.downloads.download !== "function"
+    ) {
+      throw new BridgeError("DOWNLOAD_UNSUPPORTED", "browser.downloads API is unavailable");
+    }
+    let downloadId;
+    try {
+      downloadId = await browser.downloads.download({
+        url,
+        filename,
+        saveAs: false,
+        conflictAction: "uniquify"
+      });
+    } catch (error) {
+      throw conciseError(error, "DOWNLOAD_START_FAILED");
+    }
+    log("debug", "Triggered browser download by url", { url, filename, downloadId });
+    let finalFilename = filename;
+    try {
+      const items = await browser.downloads.search({ id: downloadId });
+      if (items && items.length > 0) {
+        finalFilename = items[0].filename || finalFilename;
+      }
+    } catch {
+      // ignore, return the requested filename
+    }
+    return {
+      downloaded: true,
+      url,
+      filename: finalFilename
+    };
   }]
 ]);
 

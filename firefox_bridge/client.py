@@ -423,6 +423,19 @@ class FirefoxBridgeClient:
             body=body,
         )
 
+    def download_url(self, url: str, filename: str) -> Any:
+        """Start a download addressed by URL, with no page or element involved.
+
+        ``filename`` is the path Firefox should write, relative to the download
+        root -- the same contract as :meth:`download`, so both routes land in
+        staging under the caller's control.
+        """
+        return self._request(
+            "POST",
+            "/api/v1/download-by-url",
+            body={"url": url, "filename": filename},
+        )
+
     def close_client(self) -> None:
         if self._owns_client:
             self._client.close()

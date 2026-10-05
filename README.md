@@ -133,6 +133,53 @@ The equivalent module form keeps working for existing scripts:
 .\.venv\Scripts\python.exe -m firefox_bridge.tools.bulk_downloader --stocks NCKL --year 2025 --all-detected
 ```
 
+## Download audited annual `instance.zip` directly
+
+Where the flow above *finds* report links by driving the IDX year panel, the
+`instance` program *builds* the URL for the audited annual `instance.zip`
+(`/Audit/{TICKER}/instance.zip`, i.e. quarter 4) and downloads it with no page
+interaction. It is a separate program writing under its own root, so its
+`download_history.json` can never collide with the page-driven one — both are
+keyed by stock + year + quarter, which is exactly the collision the separation
+prevents.
+
+```powershell
+.\.venv\Scripts\firefox-bridge-instance.exe --stocks-file db/list_saham.sql --year 2025 --delay 2 --delay-max 5
+```
+
+Dry run against the real stock list (writes nothing, needs no bridge):
+
+```powershell
+.\.venv\Scripts\python.exe -m firefox_bridge.instance.cli --stocks-file db/list_saham.sql --year 2025 --dry-run
+```
+
+Useful options:
+
+| Option | Meaning |
+| --- | --- |
+| `--stocks-file` | Read codes from a `.sql` dump; delisted rows are excluded. |
+| `--stocks` | Comma separated codes; merged with `--stocks-file` when both are given. |
+| `--year` | Reporting year. |
+| `--delay` / `--delay-max` | Seconds between stocks; with `--delay-max`, uniform random in `[--delay, --delay-max]`. Minimum 1. |
+| `--download-dir` | Download root. Default `$FIREFOX_BRIDGE_INSTANCE_DIR` or `<download root>/instance`. |
+| `--dry-run` | Report planned downloads and skips, change nothing, no bridge needed. |
+
+### Cloudflare
+
+Direct downloads to the `instance.zip` URL are bare requests: no page origin and
+no `Referer`, which Cloudflare answers with a `403` challenge page. Firefox then
+creates the file and immediately withdraws it (it appears at `t=0.01s` and is
+gone by `t=0.26s`), so the wait loop sees a path that is never written. To avoid
+that, this program keeps one tab at `https://www.idx.co.id/`, waits for the
+challenge to resolve, and re-points that tab at IDX before retrying a download
+that came back with nothing — a challenge always has a page to resolve in
+instead of failing the request. The tab is held open for the whole run and
+closed at the end.
+
+A URL that genuinely has no audited archive for the year is reported per stock
+and never aborts the run; the whole run can be re-run later and already-fetched
+stocks skip instantly via the shared history check.
+
 ## Config file
 
 Options that a scheduled run keeps repeating can live in a TOML or JSON file

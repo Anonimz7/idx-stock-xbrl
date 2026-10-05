@@ -28,6 +28,7 @@ dev = [
 firefox-bridge = "firefox_bridge.server:main"
 firefox-bridge-mcp = "firefox_bridge.mcp_server:main"
 firefox-bridge-download = "firefox_bridge.cli:main"
+firefox-bridge-instance = "firefox_bridge.instance.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["firefox_bridge"]

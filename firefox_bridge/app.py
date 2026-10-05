@@ -20,6 +20,7 @@ from .logging_config import get_logger
 from .models import (
     ClickRequest,
     DownloadRequest,
+    DownloadUrlRequest,
     FillRequest,
     NavigateRequest,
     OpenTabRequest,
@@ -202,6 +203,16 @@ def create_app(
     ) -> Any:
         params = {"tab_id": tab_id, **_model_params(payload)}
         return await active_bridge.request("tab.download", params)
+
+    # Deliberately not under /tabs/{tab_id}: nothing about this route involves a
+    # page. Giving it a tab id would imply the download is scoped to something a
+    # caller could get wrong.
+    @app.post(f"{_API_PREFIX}/download-by-url")
+    async def download_by_url(
+        payload: DownloadUrlRequest,
+        _: None = Depends(require_token),
+    ) -> Any:
+        return await active_bridge.request("download.by_url", _model_params(payload))
 
     @app.post("/extension/poll")
     async def extension_poll(
