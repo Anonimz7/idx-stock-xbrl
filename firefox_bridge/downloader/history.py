@@ -122,6 +122,58 @@ def record_download_history(
     return save_download_history(history, download_dir)
 
 
+# Failure-entry keys. A failure entry deliberately carries no FILE_KEY /
+# SIZE_KEY / SHA256_KEY: the resume logic skips a report only when the final
+# file exists on disk with a matching hash, so a recorded failure can never
+# be mistaken for a completed download -- the next run retries it exactly
+# like a stock that was never attempted.
+FAILURE_STATUS_KEY = "status"
+FAILURE_STATUS_FAILED = "failed"
+ERROR_TYPE_KEY = "error_type"
+REASON_KEY = "reason"
+FAILED_AT_KEY = "failed_at"
+FAIL_COUNT_KEY = "fail_count"
+
+
+def record_failure_history(
+    history: dict[str, Any],
+    stock: str,
+    year: int,
+    quarter: int,
+    href: str,
+    error_type: str,
+    reason: str,
+    download_dir: Path | None = None,
+) -> Path:
+    """Persist a failed download attempt together with its diagnosed reason.
+
+    Debugging a failed run should never rely on memory or on scrolling a
+    terminal: the reason (e.g. "404 Not Found" vs "Cloudflare challenge")
+    lands in the same JSON the next run reads. Latest failure wins per
+    stock/year/quarter; a later success overwrites the entry through
+    record_download_history.
+    """
+    downloads = history["downloads"]
+    stock_data = downloads.setdefault(stock.upper(), {})
+    year_data = stock_data.setdefault(str(year), {})
+    previous = year_data.get(str(quarter))
+    fail_count = 1
+    if isinstance(previous, dict):
+        try:
+            fail_count = int(previous.get(FAIL_COUNT_KEY) or 0) + 1
+        except (TypeError, ValueError):
+            fail_count = 1
+    year_data[str(quarter)] = {
+        URL_KEY: href,
+        FAILURE_STATUS_KEY: FAILURE_STATUS_FAILED,
+        ERROR_TYPE_KEY: error_type,
+        REASON_KEY: reason,
+        FAIL_COUNT_KEY: fail_count,
+        FAILED_AT_KEY: datetime.now(UTC).isoformat(),
+    }
+    return save_download_history(history, download_dir)
+
+
 def stock_year_complete(
     history: dict[str, Any],
     stock: str,

@@ -28,6 +28,7 @@ from firefox_bridge.downloader.errors import (
     ExtensionDisconnected,
 )
 from firefox_bridge.downloader.health import EXTENSION_UNAVAILABLE_STATUS, ensure_extension_ready
+from firefox_bridge.downloader.history import load_download_history, record_failure_history
 from firefox_bridge.downloader.models import RunSummary
 from firefox_bridge.downloader.paths import SAHAM_FOLDER
 from firefox_bridge.downloader.reporting import print_run_summary
@@ -39,7 +40,7 @@ from firefox_bridge.instance.paths import (
     instance_staging_root,
 )
 from firefox_bridge.instance.session import IdxSession
-from firefox_bridge.instance.urls import AUDITED_QUARTER
+from firefox_bridge.instance.urls import AUDITED_QUARTER, instance_url
 from firefox_bridge.pacing import minimum_one_second, sleep_between_stocks
 from firefox_bridge.progress import problem, progress
 from firefox_bridge.stocksource import StockListError, read_stock_list
@@ -332,16 +333,34 @@ def run(argv: Sequence[str] | None = None) -> int:
                 # A dead-window timeout is ambiguous: a 404, a Cloudflare
                 # refusal and a transient bridge error all leave no file behind.
                 # Ask the warm-up tab what the archive URL itself answered and
-                # attach that to the failure line. Diagnosis is best-effort --
-                # if it cannot run, the original timeout text is kept verbatim,
-                # so this can never abort a run.
-                if isinstance(failure, DownloadTimeout):
-                    try:
-                        reason = session.probe_archive_reason(stock, args.year)
-                    except Exception as probe_error:  # noqa: BLE001
-                        reason = f"probe gagal ({type(probe_error).__name__})"
-                    detail = f"{failure} | alasan: {reason}"
+                # attach that to the failure line. Every failure kind gets the
+                # same probe now -- a hash mismatch today can be a 404
+                # tomorrow, and a recorded reason beats guessing. Diagnosis is
+                # best-effort: if it cannot run, the original error text is
+                # kept verbatim, so this can never abort a run.
+                try:
+                    reason = session.probe_archive_reason(stock, args.year)
+                except Exception as probe_error:  # noqa: BLE001
+                    reason = f"probe gagal ({type(probe_error).__name__})"
+                detail = f"{failure} | alasan: {reason}"
                 summary.failures.append(f"{stock}: [{kind}] {detail}")
+                # Persist the failure with its reason next to the successes:
+                # the JSON history is the resume mechanism and the debugging
+                # record in one. A failure entry carries no file keys, so the
+                # skip logic (file must exist on disk with matching hash) can
+                # never mistake it for a completed download -- the next run
+                # retries it exactly like a stock never attempted.
+                try:
+                    hist = load_download_history(root)
+                    record_failure_history(
+                        hist, stock, args.year, AUDITED_QUARTER,
+                        instance_url(stock, args.year), kind, reason, root,
+                    )
+                except Exception as hist_error:  # noqa: BLE001
+                    problem(
+                        f"  -> gagal mencatat failure ke history: {hist_error}",
+                        stock=stock, year=args.year,
+                    )
                 problem(
                     f"FAILED {stock} {args.year} [{kind}]: {detail}",
                     stock=stock,
