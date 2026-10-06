@@ -21,7 +21,7 @@ from firefox_bridge.downloader.errors import DownloadTimeout
 from firefox_bridge.downloader.history import load_download_history
 from firefox_bridge.downloader.integrity import file_sha256
 from firefox_bridge.downloader.paths import download_root, report_filename
-from firefox_bridge.downloader.retry import is_retryable
+from firefox_bridge.downloader.retry import RETRY_ATTEMPTS, is_retryable
 from firefox_bridge.instance import (
     instance_download_dir,
     instance_final_path,
@@ -350,8 +350,21 @@ class _GarbageDownload:
 
 
 class _RecordingSession:
-    def __init__(self) -> None:
+    """The warm-up tab, reduced to what the retry loop can observe.
+
+    ``probe_reason`` is the verdict the archive URL gives when asked; the
+    default is a challenge, which is the transient case the remaining attempts
+    exist for. Passing ``"404 Not Found"`` makes it the final case.
+    """
+
+    def __init__(self, probe_reason: str = "Cloudflare challenge") -> None:
         self.refreshes = 0
+        self.probe_reason = probe_reason
+        self.probes: list[str] = []
+
+    def probe_archive_reason(self, stock: str, year: int) -> str:
+        self.probes.append(f"{stock} {year}")
+        return self.probe_reason
 
     def refresh(self) -> None:
         self.refreshes += 1
@@ -367,7 +380,9 @@ def test_a_blocked_download_refreshes_the_session(
 
     This is the recovery path the whole warm-up tab exists for: the bare request
     was answered with a 403 challenge, so before retrying the session is re-pointed
-    at IDX to give any pending challenge a place to resolve.
+    at IDX to give any pending challenge a place to resolve. The probe's answer
+    here is that same challenge -- transient -- which is what keeps the retries
+    running instead of ending them after the first attempt.
     """
     monkeypatch.setattr(instance_orchestrator, "DEAD_WINDOW_SECONDS", 0.05)
     monkeypatch.setattr(instance_orchestrator, "POLL_INTERVAL_SECONDS", 0.0)
@@ -376,11 +391,87 @@ def test_a_blocked_download_refreshes_the_session(
     client = _StalledDownload()
     session = _RecordingSession()
 
-    with pytest.raises(DownloadTimeout):
+    with pytest.raises(DownloadTimeout) as caught:
         download_instance(client, "NCKL", YEAR, session=session)
 
     assert client.calls  # tried at least once
     assert session.refreshes == 2  # on_retry fires before attempts 2 and 3
+    # Asked once, not once per retry: the URL is the same both times, so an
+    # answer that is still ambiguous buys nothing by being asked again.
+    assert session.probes == ["NCKL 2025"]
+    # And no ambiguous answer was hung on the error -- the caller diagnoses
+    # that one itself, after the last attempt rather than before the second.
+    assert caught.value.archive_reason is None
+
+
+def test_a_404_answer_ends_the_retries_after_a_single_attempt(
+    fast_wait: None, no_sleep: None, instance_root: Path
+) -> None:
+    """The requirement: a final answer is not retried, however retryable it looks.
+
+    From the inside a 404 is indistinguishable from a lapsed clearance or a
+    stalled handshake, and each of the two extra attempts buys a dead window, a
+    session refresh and a backoff -- all to be told a second and a third time
+    that the ticker has no 2025 audited archive. Asking the URL is what tells
+    them apart, and the answer is obeyed.
+    """
+    client = _StalledDownload()
+    session = _RecordingSession(probe_reason="404 Not Found")
+
+    with pytest.raises(DownloadTimeout):
+        download_instance(client, "NCKL", YEAR, session=session)
+
+    assert len(client.calls) == 1, "a definitive 404 was asked for again"
+    assert session.refreshes == 0, "the session was warmed for a URL that is gone"
+    assert session.probes == ["NCKL 2025"]
+
+
+def test_the_reason_that_ended_the_retries_rides_on_the_error(
+    fast_wait: None, no_sleep: None, instance_root: Path
+) -> None:
+    """The diagnosis must survive to the caller, or it gets bought twice.
+
+    The CLI reports ``... | alasan: 404 Not Found`` and records it in history.
+    Re-probing for that line would cost another navigation and could disagree
+    with the very answer the run stopped on -- so the answer rides the error.
+    """
+    client = _StalledDownload()
+    session = _RecordingSession(probe_reason="404 Not Found")
+
+    with pytest.raises(DownloadTimeout) as caught:
+        download_instance(client, "NCKL", YEAR, session=session)
+
+    assert caught.value.archive_reason == "404 Not Found"
+
+
+def test_a_probe_that_cannot_run_never_stops_the_retries(
+    fast_wait: None, no_sleep: None, instance_root: Path
+) -> None:
+    """A "we do not know" is the one diagnosis that must never stop a run.
+
+    Diagnosis is best effort everywhere else in this program, and here it is
+    load-bearing: a bridge hiccup during the probe must not be mistaken for the
+    archive being gone, or a healthy ticker loses its retries to a gap in the
+    evidence.
+    """
+
+    class _BlindSession(_RecordingSession):
+        def probe_archive_reason(self, stock: str, year: int) -> str:
+            self.probes.append(f"{stock} {year}")
+            raise RuntimeError("bridge mati")
+
+    client = _StalledDownload()
+    session = _BlindSession()
+
+    with pytest.raises(DownloadTimeout) as caught:
+        download_instance(client, "NCKL", YEAR, session=session)
+
+    assert len(client.calls) == RETRY_ATTEMPTS, "an unread probe stopped the retries"
+    assert session.refreshes == RETRY_ATTEMPTS - 1
+    # Asked once and believed once -- but a "we do not know" is not an answer
+    # to hang on the error, so the caller still has to diagnose the failure.
+    assert session.probes == ["NCKL 2025"]
+    assert caught.value.archive_reason is None
 
 
 def test_a_corrupt_download_is_not_treated_as_a_blocked_one(
@@ -394,4 +485,7 @@ def test_a_corrupt_download_is_not_treated_as_a_blocked_one(
         download_instance(client, "NCKL", YEAR, session=session)
 
     assert session.refreshes == 0
+    # A file that arrived (badly) already answers "is the URL there?" -- the
+    # probe exists for the case where nothing arrived, so it is not spent here.
+    assert session.probes == []
 

@@ -187,6 +187,98 @@ def test_attempts_must_be_at_least_one() -> None:
         run_with_retry(lambda: None, attempts=0)
 
 
+# --- stopping on an answer, not on a budget -------------------------------
+
+
+def test_give_up_ends_the_loop_on_the_first_failure() -> None:
+    """A verdict from outside is not a hiccup: asking again buys the same answer.
+
+    This is the 404 case. The failure is retryable on its face -- a timeout
+    always is -- but the caller has already asked and been told the archive is
+    not there, so the remaining attempts would only repeat the question.
+    """
+    calls: list[int] = []
+
+    def refused() -> None:
+        calls.append(1)
+        raise DownloadTimeout("tidak pernah menulis apa pun")
+
+    with pytest.raises(DownloadTimeout):
+        run_with_retry(refused, give_up=lambda _error: True)
+
+    assert len(calls) == 1, "a definitive answer was asked for again"
+
+
+def test_a_declined_give_up_leaves_the_whole_budget_intact() -> None:
+    """An ambiguous answer is exactly what the remaining attempts are for."""
+    calls: list[int] = []
+    asked: list[int] = []
+
+    def refused() -> None:
+        calls.append(1)
+        raise DownloadTimeout("masih bisa berbeda")
+
+    def not_final(_error: Exception) -> bool:
+        asked.append(1)
+        return False
+
+    with pytest.raises(DownloadTimeout):
+        run_with_retry(refused, give_up=not_final)
+
+    assert len(calls) == RETRY_ATTEMPTS
+    # Before retries 1 and 2, but not after the last attempt: by then there is
+    # no decision left for the answer to change.
+    assert len(asked) == RETRY_ATTEMPTS - 1
+
+
+def test_giving_up_announces_no_retry() -> None:
+    """The run must not report a RETRY it is never going to perform."""
+    reported: list[int] = []
+
+    def refused() -> None:
+        raise DownloadTimeout("404")
+
+    with pytest.raises(DownloadTimeout):
+        run_with_retry(
+            refused,
+            give_up=lambda _error: True,
+            on_retry=lambda attempt, _error: reported.append(attempt),
+        )
+
+    assert reported == []
+
+
+def test_give_up_is_never_asked_about_a_permanent_failure() -> None:
+    """A failure outside the retryable set never reaches the decision point."""
+    asked: list[Exception] = []
+
+    def refused() -> None:
+        raise DownloaderError("ditolak")
+
+    def would_stop(error: Exception) -> bool:
+        asked.append(error)
+        return True
+
+    with pytest.raises(DownloaderError):
+        run_with_retry(refused, give_up=would_stop)
+
+    assert asked == []
+
+
+def test_no_give_up_means_the_original_behaviour() -> None:
+    """Left unset, the loop must be indistinguishable from before the change."""
+    calls: list[int] = []
+
+    def refused() -> None:
+        calls.append(1)
+        raise DownloadTimeout("masih lambat")
+
+    with pytest.raises(DownloadTimeout):
+        run_with_retry(refused)
+
+    assert len(calls) == RETRY_ATTEMPTS
+
+
 # --- the whole path: retry must not repeat a destructive step ------------
 
 

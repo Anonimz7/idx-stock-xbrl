@@ -14,3 +14,7 @@ coverage.xml
 .env
 *.log
 logs/
+
+# Daftar saham tersisa adalah hasil generate dari riwayat unduhan lokal, jadi
+# isinya berbeda di tiap mesin dan langsung usang begitu riwayat berubah.
+db/*.csv

@@ -50,6 +50,11 @@ NOT_FOUND_MARKERS = (
     "resource cannot be found",
 )
 
+# The probe answer that ends the matter: the archive URL itself said the file
+# is not there. Every other classification is a condition rather than a
+# verdict, and a condition can clear on the next attempt.
+NOT_FOUND_REASON = "404 Not Found"
+
 # How long the warm-up tab is allowed to render when diagnosing a failed
 # download. Bounded so a hung challenge cannot pin the diagnosis for long.
 PROBE_WAIT_SECONDS = 6.0
@@ -88,7 +93,7 @@ def classify_instance_page(page_text: str) -> str:
     if any(marker in lowered for marker in CHALLENGE_MARKERS):
         return "Cloudflare challenge"
     if any(marker in lowered for marker in NOT_FOUND_MARKERS):
-        return "404 Not Found"
+        return NOT_FOUND_REASON
     # Not a challenge and not a recognized 404, but too short to be the real
     # IDX homepage: some other interstitial (e.g. a 403 body) rather than a
     # clean success.
@@ -98,6 +103,24 @@ def classify_instance_page(page_text: str) -> str:
     # the archive itself served, yet downloads.download still wrote nothing.
     # Reported only: not salvaged, keeping the "no fallback" contract.
     return "200 (file exists; downloads.download failed)"
+
+
+def is_definitive_reason(reason: str) -> bool:
+    """True when a probe answer is final, so no retry could change it.
+
+    Only :data:`NOT_FOUND_REASON` qualifies. The archive URL gave a verdict
+    about itself, and asking it again -- with a Cloudflare refresh in between --
+    spends the same wall-clock time to reach the same one. The rest are all
+    conditions: a challenge clears, a 403 body belongs to a challenge in
+    progress, a "file exists" means the URL served and only the transfer
+    failed, and an unreadable probe is a gap in the diagnosis rather than a
+    finding.
+
+    This is what keeps a stock with no 2025 audited report -- roughly 3% of the
+    active list -- from paying for three attempts, two session refreshes and
+    two backoffs just to be told the same thing three times.
+    """
+    return reason == NOT_FOUND_REASON
 
 
 class IdxSession:
@@ -201,6 +224,36 @@ class IdxSession:
             return str(result.get("text") or "")
         return str(result or "")
 
+    def _current_url(self) -> str | None:
+        """Best-effort URL of the held tab, or ``None`` when unreadable.
+
+        ``navigate`` returns as soon as the request is posted, so the tab URL
+        is the only cheap signal that the browser actually left the page it was
+        showing; reading text before that just returns the previous document.
+        """
+        if self._tab_id is None:
+            return None
+        # Any failure -- a missing method on a stub client, a dead bridge, a
+        # malformed payload -- resolves to "unknown", which lets the caller
+        # fall back to reading text instead of aborting the probe.
+        reader = getattr(self._client, "tabs", None)
+        if not callable(reader):
+            return None
+        try:
+            tabs = reader()
+        except FirefoxBridgeClientError:
+            return None
+        items: Any = ()
+        if isinstance(tabs, dict):
+            items = tabs.get("result") or tabs.get("tabs") or ()
+        elif isinstance(tabs, list):
+            items = tabs
+        wanted = str(self._tab_id)
+        for item in items:
+            if isinstance(item, dict) and str(item.get("id")) == wanted:
+                return str(item.get("url") or "")
+        return None
+
     def probe_archive_reason(self, stock: str, year: int) -> str:
         """Navigate the held tab at one archive URL once and classify the response.
 
@@ -219,9 +272,22 @@ class IdxSession:
         href = instance_url(stock, year)
         try:
             wait_before_step(f"probe alasan gagal {stock} {year}")
+            before_url = self._current_url()
             self._client.navigate(self._tab_id, href)
         except FirefoxBridgeClientError as error:
             return f"probe navigasi gagal ({type(error).__name__}: {error})"
+        # ``navigate`` only posts the request: the tab still shows the warm-up
+        # IDX page until the browser commits the new one. Reading text straight
+        # away returned that stale homepage, which classified every failure as
+        # "200 (file exists)" even when the archive URL 404s. Wait for the URL
+        # to move first; a served zip instead downloads and leaves the URL put,
+        # so timing out here is itself the signal that the file was reachable.
+        if before_url is not None:
+            deadline = time.monotonic() + PROBE_WAIT_SECONDS
+            while time.monotonic() < deadline:
+                if self._current_url() != before_url:
+                    break
+                time.sleep(POLL_INTERVAL_SECONDS)
         text = ""
         deadline = time.monotonic() + PROBE_WAIT_SECONDS
         while time.monotonic() < deadline:
@@ -243,6 +309,8 @@ class IdxSession:
 __all__ = [
     "IDX_URL",
     "IdxSession",
-    "is_clear_page",
+    "NOT_FOUND_REASON",
     "classify_instance_page",
+    "is_clear_page",
+    "is_definitive_reason",
 ]

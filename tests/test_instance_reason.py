@@ -15,6 +15,7 @@ from firefox_bridge.instance.session import (
     IDX_URL,
     IdxSession,
     classify_instance_page,
+    is_definitive_reason,
 )
 
 
@@ -92,6 +93,41 @@ def test_classify_full_idx_homepage_means_file_served() -> None:
     )
 
 
+def test_hanya_404_dianggap_jawaban_final() -> None:
+    """Satu-satunya alasan yang boleh menghentikan retry lebih awal.
+
+    Alasan lain bukan vonis melainkan kondisi, dan kondisi bisa berubah di
+    percobaan berikutnya -- itulah gunanya retry. 404 adalah keputusan URL itu
+    sendiri tentang dirinya, jadi mengulang pertanyaan hanya membeli jawaban
+    yang sama dengan harga yang sama.
+    """
+    assert is_definitive_reason("404 Not Found")
+    assert not is_definitive_reason("200 (file exists; downloads.download failed)")
+    assert not is_definitive_reason("Cloudflare challenge")
+    assert not is_definitive_reason("Cloudflare/other error")
+    assert not is_definitive_reason("probe navigasi gagal (FirefoxBridgeClientError: x)")
+    assert not is_definitive_reason("tidak ada tab warm-up untuk probe")
+    assert not is_definitive_reason("")
+
+
+def test_klasifikator_dan_status_final_tidak_berbeda_pendapat() -> None:
+    """Ejaan 404 apa pun dianggap final; tidak satu pun hasil lain yang begitu.
+
+    Kalau dua fungsi ini pernah berbeda pendapat, retry berhenti pada alasan
+    yang salah -- atau justru tidak berhenti sama sekali pada yang benar.
+    """
+    assert is_definitive_reason(classify_instance_page("404 Not Found"))
+    assert is_definitive_reason(classify_instance_page("Halaman tidak ditemukan"))
+    assert is_definitive_reason(classify_instance_page("File tidak tersedia"))
+    for page in (
+        "Just a moment, please wait",
+        "access denied",
+        "",
+        "PT Bursa Efek Indonesia " + "x" * 200,
+    ):
+        assert not is_definitive_reason(classify_instance_page(page)), page
+
+
 def test_probe_returns_no_tab_marker_when_tab_is_none() -> None:
     session = IdxSession(_FakeClient())
     assert session.probe_archive_reason("ARKA", 2025) == "tidak ada tab warm-up untuk probe"
@@ -127,4 +163,81 @@ def test_probe_empty_text_classified_as_other_and_still_restores() -> None:
     reason = session.probe_archive_reason("ARKA", 2025)
 
     assert reason == "Cloudflare/other error"
+    assert client.navigate_calls[-1][1] == IDX_URL
+
+
+class _PendingNavClient:
+    """Klien yang meniru browser: navigasi baru butuh beberapa siklus untuk commit.
+
+    Sampai URL tab berpindah, ``text()`` masih mengembalikan dokumen lama
+    (homepage IDX) -- persis kondisi yang membuat probe salah melaporkan
+    ``200 (file exists)`` untuk URL yang sebenarnya 404.
+    """
+
+    def __init__(
+        self,
+        homepage: str,
+        final_text: str,
+        pending_calls: int,
+        final_url: str = "https://www.idx.co.id/Portals/0/x/Audit/ARKA/instance.zip",
+    ) -> None:
+        self._homepage = homepage
+        self._final_text = final_text
+        self._pending = pending_calls
+        self._final_url = final_url
+        self._old_url = IDX_URL
+        self.tab_calls = 0
+        self.navigate_calls: list[tuple[Any, str]] = []
+
+    def _committed(self) -> bool:
+        return self.tab_calls > self._pending
+
+    def tabs(self) -> Any:
+        self.tab_calls += 1
+        url = self._final_url if self._committed() else self._old_url
+        return {"result": [{"id": "tab-1", "url": url}]}
+
+    def navigate(self, tab_id: Any, url: str) -> Any:
+        self.navigate_calls.append((tab_id, url))
+        return {"id": tab_id}
+
+    def text(self, tab_id: Any, max_chars: int | None = None) -> Any:
+        return {"text": self._final_text if self._committed() else self._homepage}
+
+
+def test_probe_waits_for_navigation_before_reading_stale_homepage() -> None:
+    """Regresi: teks halaman lama tidak boleh terbaca sebelum navigasi commit.
+
+    ``navigate()`` hanya mem-post request, jadi tepat setelah dipanggil tab
+    masih menampilkan homepage IDX. Dulu teks itulah yang langsung dibaca,
+    sehingga URL yang benar-benar 404 ikut terklasifikasi "200 (file exists)".
+    """
+    homepage = "PT Bursa Efek Indonesia - portal pasar modal " + "x" * 200
+    client = _PendingNavClient(homepage, "404 - Not Found", pending_calls=3)
+    session = IdxSession(client)
+    session._tab_id = "tab-1"
+
+    reason = session.probe_archive_reason("ARKA", 2025)
+
+    # Navigasi harus sempat commit dulu, baru teks dibaca.
+    assert client.tab_calls > 3
+    assert reason == "404 Not Found"
+    # Dan sesi tetap dipulihkan ke homepage.
+    assert client.navigate_calls[-1][1] == IDX_URL
+
+
+def test_probe_still_reports_200_when_navigation_never_commits() -> None:
+    """URL yang tak pernah berpindah = zip terunduh dan tab diam di homepage.
+
+    Di sana "200 (file exists; ...)" memang artinya benar: file terjangkau,
+    hanya ``downloads.download`` yang tidak menulis apa-apa.
+    """
+    homepage = "PT Bursa Efek Indonesia - portal pasar modal " + "x" * 200
+    client = _PendingNavClient(homepage, homepage, pending_calls=10**9)
+    session = IdxSession(client)
+    session._tab_id = "tab-1"
+
+    reason = session.probe_archive_reason("ARKA", 2025)
+
+    assert reason == "200 (file exists; downloads.download failed)"
     assert client.navigate_calls[-1][1] == IDX_URL

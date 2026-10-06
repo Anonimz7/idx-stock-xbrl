@@ -193,6 +193,28 @@ def _as_downloader_error(error: Exception) -> DownloaderError:
     return DownloaderError(str(error) or type(error).__name__)
 
 
+def _failure_reason(
+    session: IdxSession, stock: str, year: int, failure: DownloaderError,
+) -> str:
+    """Return the diagnosis for a failed download, probing only if nobody has.
+
+    The retry loop asks the archive URL whether another attempt could differ,
+    and hangs the answer on the error only when it ended the retrying there.
+    That answer is worth reusing: it is final by definition, so re-asking would
+    buy a second navigation and could disagree with the reason the run stopped
+    for. Anything else -- a failure with no session to ask, a non-timeout, a
+    probe the loop declined to repeat -- is diagnosed here, fresh, after the
+    last attempt rather than two attempts earlier.
+    """
+    carried = getattr(failure, "archive_reason", None)
+    if carried:
+        return str(carried)
+    try:
+        return session.probe_archive_reason(stock, year)
+    except Exception as probe_error:  # noqa: BLE001 - diagnosis never aborts a run
+        return f"probe gagal ({type(probe_error).__name__})"
+
+
 def _dry_run(stock_codes: list[str], year: int, download_dir: Path | None) -> int:
     """Report what a real run would do, changing nothing.
 
@@ -335,13 +357,12 @@ def run(argv: Sequence[str] | None = None) -> int:
                 # Ask the warm-up tab what the archive URL itself answered and
                 # attach that to the failure line. Every failure kind gets the
                 # same probe now -- a hash mismatch today can be a 404
-                # tomorrow, and a recorded reason beats guessing. Diagnosis is
-                # best-effort: if it cannot run, the original error text is
-                # kept verbatim, so this can never abort a run.
-                try:
-                    reason = session.probe_archive_reason(stock, args.year)
-                except Exception as probe_error:  # noqa: BLE001
-                    reason = f"probe gagal ({type(probe_error).__name__})"
+                # tomorrow, and a recorded reason beats guessing. A reason the
+                # retry loop already probed (the 404 that stopped it) is reused
+                # instead of re-asking. Diagnosis is best-effort: if it cannot
+                # run, the original error text is kept verbatim, so this can
+                # never abort a run.
+                reason = _failure_reason(session, stock, args.year, failure)
                 detail = f"{failure} | alasan: {reason}"
                 summary.failures.append(f"{stock}: [{kind}] {detail}")
                 # Persist the failure with its reason next to the successes:

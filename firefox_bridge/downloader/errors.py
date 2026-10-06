@@ -51,7 +51,18 @@ class StaleReference(DownloaderError):
 
 
 class DownloadTimeout(DownloaderError):
-    """A download did not finish inside its time budget."""
+    """A download did not finish inside its time budget.
+
+    ``archive_reason`` carries the diagnosis that ended the retries: a dead
+    window looks identical whether the URL 404'd, Cloudflare refused the
+    request or the transfer stalled, so the instance program asks the archive
+    URL itself and stops retrying on a 404. Hanging that answer here lets the
+    caller report the reason the run actually stopped for instead of paying for
+    a second probe. ``None`` means no answer ended it -- the default, and what
+    the page-flow program, which has no tab to ask, always sees.
+    """
+
+    archive_reason: str | None = None
 
 
 class IntegrityError(DownloaderError):

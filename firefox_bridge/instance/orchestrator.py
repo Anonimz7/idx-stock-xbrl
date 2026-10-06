@@ -46,7 +46,7 @@ from .paths import (
     instance_final_path,
     instance_staging_relative_filename,
 )
-from .session import IdxSession
+from .session import IdxSession, is_definitive_reason
 from .urls import AUDITED_QUARTER, instance_url, validate_instance_url
 
 # How long an absent staging path may stay absent before the download is judged
@@ -246,7 +246,10 @@ def download_instance(
     a download that never wrote anything is the signature of Cloudflare
     refusing the bare request, and re-pointing the kept IDX tab at the site
     gives any pending challenge a place to resolve instead of failing the
-    retry the same way.
+    retry the same way. It is also asked, once, what the archive URL itself
+    answered while retries remain: a 404 ends the loop there, so a ticker with
+    no audited archive costs one attempt rather than three, and that reason
+    rides on the raised error for the caller to report without asking twice.
     """
     code = normalize_stock_code(stock)
     root = instance_download_dir(download_dir)
@@ -301,6 +304,10 @@ def download_instance(
     staging_relative = instance_staging_relative_filename(code, year)
     staged: list[Path] = []
     attempts = {"count": 0}
+    # The archive URL's answer, kept across attempts: each attempt raises its
+    # own exception, so there is nothing to hang the diagnosis on until one of
+    # them actually ends the loop.
+    diagnosis: list[str] = []
 
     def _attempt() -> tuple[int, Path]:
         attempts["count"] += 1
@@ -322,10 +329,53 @@ def download_instance(
             attempt=attempt,
         )
 
+    def _give_up(error: Exception) -> bool:
+        """Ask the archive URL whether another attempt could answer differently.
+
+        A dead-window timeout is the failure worth asking about: a 404, a
+        clearance that has since lapsed and a stalled handshake are all
+        indistinguishable from here, and only the first is final. Anything else
+        -- an archive that failed validation, a stale ref -- is already known
+        to be retryable, so it is not worth a navigation to confirm.
+
+        Asked at most once per download. The URL is the same every time, so
+        re-asking a still-ambiguous answer buys nothing; only a probe that
+        never ran is left for the caller to make at the end.
+
+        A definitive answer rides on the error, because that answer is what
+        ended the retries and reporting it must not cost a second probe that
+        could disagree. An ambiguous one deliberately does not: the caller
+        re-probes after the last attempt for a diagnosis taken then, not one
+        taken two attempts earlier. Best effort throughout -- a probe that
+        cannot run is recorded as such and the retries continue, because "we do
+        not know" is the one answer that must never stop a run.
+        """
+        if session is None or not isinstance(error, DownloadTimeout):
+            return False
+        if diagnosis:
+            reason = diagnosis[0]
+        else:
+            try:
+                reason = session.probe_archive_reason(code, year)
+            except Exception as probe_error:  # noqa: BLE001
+                reason = f"probe gagal ({type(probe_error).__name__})"
+            diagnosis.append(reason)
+        if not is_definitive_reason(reason):
+            return False
+        error.archive_reason = reason
+        notice(
+            f"STOP: instance {code} {year} menjawab {reason}; "
+            f"percobaan dihentikan, tidak diulang",
+            stock=code,
+            year=year,
+        )
+        return True
+
     size, staging_path = run_with_retry(
         _attempt,
         discard=lambda: _discard_all(staged),
         on_retry=_on_retry,
+        give_up=_give_up,
     )
 
     wait_before_step("jeda sebelum memindahkan file")
