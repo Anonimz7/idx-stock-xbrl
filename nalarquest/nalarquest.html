@@ -1,0 +1,2692 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NalarQuest v0.7.2 — Prototipe</title>
+<style>
+  :root{
+    --paper:#f3efe5; --paper-2:#eae5d7; --ink:#14110d; --ink-2:#4b463c;
+    --muted:#8d8676; --rule:#d8d2c2; --rule-2:#c3bca9;
+    --ok:#2f5d3a; --ok-bg:#e4ece4; --no:#a02f1a; --no-bg:#f2e4de;
+    --static:#7a5a1e; --static-bg:#f0e9d6;
+    --accent:#2f4a6b; --accent-bg:#e2e8f0;
+    --warn:#7a5a1e; --warn-bg:#f0e9d6;
+    --foot-h:30px;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{
+    margin:0; padding-bottom:var(--foot-h);
+    background:var(--paper); color:var(--ink);
+    font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    font-size:12.5px; line-height:1.55; font-variant-numeric:tabular-nums;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{font-family:"Iowan Old Style","Charter","Palatino Linotype",Palatino,Georgia,serif;font-variant-numeric:normal}
+  button,input{font:inherit;color:inherit;background:none;border:none;padding:0;cursor:pointer}
+  h1,h2,h3,p,dl,dd,dt,pre{margin:0}
+  .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:500}
+
+  .top{display:flex;align-items:center;gap:28px;height:50px;padding:0 20px;
+    border-bottom:1px solid var(--rule-2);background:var(--paper);position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+  .mark{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--ink);
+    font-size:10px;letter-spacing:.02em}
+  .name{letter-spacing:.02em}
+  .tag{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    border:1px solid var(--rule-2);padding:1px 5px}
+  .tabs{display:flex;gap:2px;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none;
+    transition:opacity .15s}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{padding:6px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-2);border-bottom:1px solid transparent;white-space:nowrap}
+  .tabs button:hover{color:var(--ink)}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+  .hint{font-size:10px;color:var(--muted);letter-spacing:.06em;flex:0 0 auto}
+  @media (max-width:820px){ .hint{display:none} }
+
+  .app{display:grid;grid-template-columns:210px minmax(0,1fr) 380px;
+    min-height:calc(100vh - 50px - var(--foot-h))}
+  .rail{border-right:1px solid var(--rule-2);padding:20px 16px 28px;display:flex;
+    flex-direction:column;gap:18px}
+  .rail section{display:flex;flex-direction:column;gap:8px;transition:opacity .15s}
+  .stage{padding:34px 44px 60px;min-width:0}
+  .src{border-left:1px solid var(--rule-2);display:flex;flex-direction:column;min-height:0;background:var(--paper-2)}
+  @media (max-width:1120px){
+    .app{grid-template-columns:190px minmax(0,1fr)}
+    .src{grid-column:1/-1;border-left:none;border-top:1px solid var(--rule-2)}
+  }
+  @media (max-width:700px){
+    .app{grid-template-columns:minmax(0,1fr)}
+    .rail{border-right:none;border-bottom:1px solid var(--rule-2);flex-direction:row;
+      flex-wrap:wrap;gap:18px;padding:14px}
+    .rail section{flex:1 1 160px;min-width:0}
+    .stage{padding:22px 18px 44px}
+  }
+
+  .seg{display:flex;flex-wrap:wrap;gap:4px}
+  .seg button{padding:4px 9px;font-size:11px;color:var(--ink-2);border:1px solid var(--rule-2);
+    background:transparent;letter-spacing:.04em}
+  .seg button:hover{border-color:var(--ink-2)}
+  .seg button.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+  .seg.small button{padding:2px 7px;font-size:10px;border:none;border-bottom:1px solid transparent}
+  .seg.small button.on{background:none;color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+
+  .p-list{display:flex;flex-direction:column;gap:1px}
+  .p-row{
+    display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:6px;
+    padding:5px 7px;width:100%;text-align:left;
+    font-size:10.5px;letter-spacing:.02em;
+    border:1px solid transparent;color:var(--ink-2);
+    transition:background .08s,border-color .08s,color .08s;
+  }
+  .p-row:hover{background:var(--paper-2)}
+  .p-row.on{background:var(--paper-2);border-color:var(--rule-2);color:var(--ink);font-weight:600}
+  .p-row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .p-row .acc{color:var(--muted);font-size:10px}
+  .p-row.on .acc{color:var(--ink-2)}
+  .p-row.empty{opacity:.45}
+  .p-row.empty .acc{color:var(--rule-2)}
+
+  .p-subs{display:flex;flex-direction:column;gap:0;padding:2px 0 4px 0}
+  .p-sub{
+    display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:6px;
+    padding:2px 7px 2px 16px;font-size:10px;color:var(--muted);
+    border-left:1px solid var(--rule-2);margin-left:7px;
+  }
+  .p-sub .acc{font-variant-numeric:tabular-nums}
+
+  .session-panel{display:flex;flex-direction:column;gap:8px}
+  .session-status{font-size:10.5px;letter-spacing:.03em;color:var(--muted);line-height:1.5}
+  .session-ledger{display:flex;flex-direction:column;gap:0}
+  .session-ledger > div{
+    display:flex;justify-content:space-between;align-items:baseline;
+    padding:3px 0;border-bottom:1px solid var(--rule);font-size:11px;
+  }
+  .session-ledger > div:first-child{border-top:1px solid var(--rule)}
+  .session-ledger dt{color:var(--ink-2)}
+  .session-ledger dd{color:var(--ink);font-variant-numeric:tabular-nums}
+  .session-ledger dd.acc-ok{color:var(--ok);font-weight:600}
+  .session-ledger dd.acc-no{color:var(--no);font-weight:600}
+  .session-ledger .sub-head{padding-top:8px;border-bottom:none;font-size:9.5px;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+
+  .calib-list{display:flex;flex-direction:column;gap:2px;padding:4px 0}
+  .calib-row{
+    display:grid;grid-template-columns:1fr auto;gap:8px;
+    padding:2px 7px;font-size:10.5px;color:var(--ink-2);
+  }
+  .calib-row .acc{color:var(--muted);font-variant-numeric:tabular-nums}
+  .calib-gap{
+    font-size:10px;color:var(--muted);padding:3px 7px;letter-spacing:.03em;
+  }
+  .calib-gap.good{color:var(--ok)}
+  .calib-gap.bad{color:var(--no)}
+
+  .btn-sm{
+    display:block;width:100%;padding:6px 10px;
+    border:1px solid var(--ink);background:transparent;color:var(--ink);
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase;text-align:center;
+    transition:background .08s,color .08s,border-color .08s;
+  }
+  .btn-sm:hover{background:var(--ink);color:var(--paper)}
+  .btn-sm.primary{background:var(--ink);color:var(--paper)}
+  .btn-sm.primary:hover{background:var(--ink-2);border-color:var(--ink-2)}
+  .btn-sm.danger{border-color:var(--no);color:var(--no)}
+  .btn-sm.danger:hover{background:var(--no);color:var(--paper)}
+
+  .locked{pointer-events:none;opacity:.35}
+
+  .ledger{display:flex;flex-direction:column}
+  .ledger > div{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;
+    border-bottom:1px solid var(--rule)}
+  .ledger > div:first-child{border-top:1px solid var(--rule)}
+  .ledger dt{font-size:11px;color:var(--ink-2)}
+  .ledger dd{font-size:13px}
+  .ledger dd.acc{font-size:12px}
+
+  .btn{display:block;width:100%;padding:9px 12px;border:1px solid var(--ink);background:var(--ink);
+    color:var(--paper);font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:center;
+    transition:background .08s,color .08s,opacity .1s}
+  .btn:hover{background:transparent;color:var(--ink)}
+  .btn:disabled{opacity:.35;cursor:default;background:var(--ink);color:var(--paper)}
+  .btn:disabled:hover{background:var(--ink);color:var(--paper)}
+
+  /* v0.7.2: panel & form dataset */
+  .modal-back{position:fixed;inset:0;background:rgba(24,20,16,.55);display:flex;
+    align-items:center;justify-content:center;z-index:60;padding:16px}
+  .modal{background:var(--paper);border:1px solid var(--ink);max-width:660px;width:100%;
+    max-height:88vh;overflow:auto;padding:18px 18px 16px}
+  .modal h3{margin:0 0 12px;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+  .modal textarea{width:100%;min-height:200px;box-sizing:border-box;resize:vertical;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;
+    padding:8px 10px;border:1px solid var(--rule-2);background:#fff;color:var(--ink)}
+  .modal .row{display:flex;gap:8px;margin-top:10px}
+  .modal .row .btn-sm{flex:1}
+  .modal .msg{font-size:11px;margin-top:8px;white-space:pre-wrap;line-height:1.5}
+  .modal .msg.err{color:var(--no)}
+  .modal .msg.ok{color:var(--ok)}
+  .modal .ds-formrow{display:flex;gap:8px;margin-bottom:8px}
+  .modal .ds-formrow select{flex:1;padding:6px 8px;font-size:11px;
+    border:1px solid var(--ink);background:var(--paper);color:var(--ink)}
+  .modal .ds-formrow .btn-sm{flex:0 0 auto;width:auto;padding:6px 14px}
+  .ds-list{margin-top:8px}
+  .ds-list .ds-tag{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+  .ds-list .ds-item{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:4px 0;border-bottom:1px solid var(--rule);font-size:11px}
+  .ds-list .ds-del{background:none;border:1px solid var(--rule-2);color:var(--muted);font-size:9px;
+    letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;cursor:pointer}
+  .ds-list .ds-del:hover{border-color:var(--no);color:var(--no)}
+
+
+  .meta{display:flex;flex-wrap:wrap;gap:0 14px;font-size:10.5px;color:var(--muted);
+    letter-spacing:.06em;padding-bottom:12px;border-bottom:1px solid var(--rule);margin-bottom:28px}
+  .meta span::before{content:"· ";color:var(--rule-2)}
+  .meta span:first-child::before{content:""}
+  .meta b{font-weight:600;color:var(--ink-2)}
+  .meta .src-tag{font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:1px 6px;
+    border:1px solid currentColor}
+  .meta .src-tag.template{color:var(--muted)}
+  .meta .src-tag.static{color:var(--static);background:var(--static-bg)}
+  .meta .session-tag{font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:1px 6px;
+    border:1px solid var(--accent);color:var(--accent);background:var(--accent-bg);font-weight:600}
+
+  .prompt{font-size:23px;line-height:1.42;letter-spacing:-.005em;max-width:40ch;text-wrap:balance}
+  @media (max-width:700px){ .prompt{font-size:19px} }
+
+  .inputs{margin-top:32px;max-width:660px}
+
+  .opts{display:flex;flex-direction:column;gap:7px}
+  .opt{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:14px;width:100%;
+    padding:12px 14px;text-align:left;border:1px solid var(--rule-2);background:transparent;
+    transition:background .08s,border-color .08s,opacity .1s}
+  .opt:not(:disabled):hover{background:var(--paper-2);border-color:var(--ink-2)}
+  .opt .key{font-size:10.5px;color:var(--muted);border-right:1px solid var(--rule);padding-right:12px;
+    text-align:center;letter-spacing:.08em}
+  .opt .txt{font-size:13.5px;line-height:1.45}
+  .opt .mk{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .opt:disabled{cursor:default}
+  .opt.correct{border-color:var(--ok);background:var(--ok-bg)}
+  .opt.correct .mk{color:var(--ok)}
+  .opt.wrong{border-color:var(--no);background:var(--no-bg)}
+  .opt.wrong .mk{color:var(--no)}
+  .opt.faded{opacity:.42}
+  .opt:focus-visible{outline:1px solid var(--ink);outline-offset:2px}
+  .opt.chosen{border-color:var(--ink-2);background:var(--paper-2)}
+
+  .conf-bar{
+    margin-top:24px;padding:14px 16px;
+    border:1px solid var(--rule-2);background:var(--paper-2);
+    max-width:660px;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    animation:rise .18s ease-out;
+  }
+  .conf-bar .q{font-size:12px;letter-spacing:.03em;color:var(--ink-2)}
+  .conf-btns{display:flex;gap:6px;flex:0 0 auto}
+  .conf-btn{
+    padding:8px 16px;border:1px solid var(--ink-2);background:var(--paper);
+    font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    transition:background .08s,border-color .08s,color .08s;
+  }
+  .conf-btn:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .conf-btn.yakin:hover{background:var(--ok);border-color:var(--ok)}
+  .conf-btn.tidak:hover{background:var(--no);border-color:var(--no)}
+  .conf-hint{font-size:10px;color:var(--muted);letter-spacing:.06em;margin-top:6px}
+
+  .kp-wrap{display:flex;flex-direction:column;gap:18px;max-width:420px}
+  .kp-display{padding:14px 18px;border:1px solid var(--rule-2);background:var(--paper-2);
+    font-size:26px;letter-spacing:.1em;min-height:60px;display:flex;align-items:center;
+    justify-content:flex-end;font-variant-numeric:tabular-nums;position:relative;overflow:hidden}
+  .kp-display .cursor{display:inline-block;width:2px;height:24px;background:var(--ink);margin-left:3px;
+    animation:blink 1s step-end infinite}
+  .kp-display .cursor.hide{display:none}
+  @keyframes blink{50%{opacity:0}}
+  .kp-display .ph{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    margin-right:auto}
+  .kp-keys{display:grid;gap:8px}
+  .kp-key{padding:15px 0;border:1px solid var(--ink-2);background:var(--paper);font-size:17px;
+    letter-spacing:.04em;transition:background .08s,border-color .08s;user-select:none;min-height:52px}
+  .kp-key:hover:not(:disabled){background:var(--paper-2);border-color:var(--ink)}
+  .kp-key:active:not(:disabled){background:var(--rule)}
+  .kp-key:disabled{opacity:.35;cursor:default}
+  .kp-key.action{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .kp-key.action:hover:not(:disabled){background:var(--ink-2)}
+  .kp-key.action:disabled{background:var(--muted);border-color:var(--muted);color:var(--paper)}
+  .pal-key{font-size:22px;letter-spacing:0}
+
+  .fill-wrap{display:flex;flex-direction:column;gap:0;max-width:620px}
+  .fill-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 8px;font-size:16.5px;
+    line-height:2.1}
+  .fill-slot{border:none;border-bottom:1px solid var(--ink-2);background:transparent;
+    padding:4px 6px;color:var(--ink);min-width:100px;text-align:center;border-radius:0;
+    transition:background .1s,border-color .1s}
+  .fill-slot:focus{outline:none}
+  .fill-slot.active{border-bottom-color:var(--ink);border-bottom-width:2px;background:var(--paper-2)}
+  .fill-slot:disabled{opacity:.85}
+  .fill-slot.ok{border-color:var(--ok);color:var(--ok);font-weight:600}
+  .fill-slot.no{border-color:var(--no);color:var(--no);font-weight:600}
+
+  .fill-keys{display:grid;gap:8px;margin-top:22px;width:100%}
+  .fill-key{padding:11px 10px;border:1px solid var(--ink-2);background:var(--paper);font-size:13px;
+    letter-spacing:.04em;transition:background .08s,border-color .08s;min-height:44px}
+  .fill-key:hover:not(:disabled){background:var(--paper-2);border-color:var(--ink)}
+  .fill-key:active:not(:disabled){background:var(--rule)}
+  .fill-key:disabled{opacity:.35;cursor:default}
+
+  .fill-actions{display:flex;gap:8px;margin-top:16px;width:100%}
+  .fill-action{padding:8px 18px;border:1px solid var(--ink-2);background:transparent;
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+  .fill-action:hover:not(:disabled){border-color:var(--ink);background:var(--paper-2)}
+  .fill-action.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .fill-action.primary:hover:not(:disabled){background:var(--ink-2);border-color:var(--ink-2)}
+  .fill-action:disabled{opacity:.35;cursor:default}
+
+  .fill-submit{margin-top:20px;width:100%}
+  .fill-submit button{padding:8px 22px;border:1px solid var(--ink);background:var(--ink);
+    color:var(--paper);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+  .fill-submit button:hover:not(:disabled){background:transparent;color:var(--ink)}
+  .fill-submit button:disabled{opacity:.35;cursor:default}
+
+  .explain{margin-top:28px;max-width:660px;padding-top:18px;border-top:1px solid var(--rule);
+    font-size:13px;line-height:1.6;color:var(--ink-2);animation:rise .22s ease-out}
+  .explain .lbl{display:block;margin-bottom:8px}
+  .explain .verdict{color:var(--ink);font-weight:600}
+  .explain .verdict.ok{color:var(--ok)}
+  .explain .verdict.no{color:var(--no)}
+  .explain .row{margin-top:6px}
+  .explain .row .tag{display:inline-block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);margin-right:8px;min-width:76px}
+  .explain .meta-line{
+    display:flex;flex-wrap:wrap;gap:0 16px;
+    font-size:10px;letter-spacing:.06em;color:var(--muted);
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);
+  }
+  .explain .meta-line span::before{content:"· ";color:var(--rule-2)}
+  .explain .meta-line span:first-child::before{content:""}
+  .explain .meta-line .ok{color:var(--ok)}
+  .explain .meta-line .no{color:var(--no)}
+  .explain .whys{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+  .explain .why{display:grid;grid-template-columns:20px 1fr;gap:10px;font-size:12.5px;
+    padding:8px 10px;border-left:2px solid var(--rule-2)}
+  .explain .why.correct{border-left-color:var(--ok);background:var(--ok-bg)}
+  .explain .why.wrong{border-left-color:var(--no);background:var(--no-bg)}
+  .explain .why .k{font-size:10.5px;color:var(--muted);letter-spacing:.08em}
+  @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .src-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;
+    border-bottom:1px solid var(--rule-2);flex-wrap:wrap}
+  .src-head .seg.small button[data-t="tpl"]{position:relative}
+  .code{flex:1 1 auto;overflow:auto;padding:16px 18px 24px;font-size:11px;line-height:1.6;
+    white-space:pre;color:var(--ink-2);max-height:calc(100vh - 130px)}
+  .code .k{color:var(--muted)}
+  .code .s{color:var(--ink)}
+  .code .n{color:var(--no)}
+  .code .b{color:var(--ok)}
+  .code .r{color:var(--muted);font-style:italic}
+  .code .w{color:var(--warn)}
+  @media (max-width:1120px){ .code{max-height:340px} }
+
+  .redact-note{
+    margin:0 18px 0;
+    padding:8px 12px;
+    border:1px solid var(--rule-2);
+    background:var(--paper);
+    font-size:10px;letter-spacing:.03em;color:var(--muted);
+    line-height:1.5;
+  }
+  .redact-note.hidden{display:none}
+
+  .val-warn{
+    margin-top:8px;padding:8px 10px;
+    border:1px solid var(--warn);background:var(--warn-bg);
+    font-size:10px;letter-spacing:.02em;color:var(--warn);
+    line-height:1.5;
+  }
+  .val-warn .head{font-weight:600;text-transform:uppercase;letter-spacing:.1em;
+    display:block;margin-bottom:4px;font-size:9px}
+  .val-warn .item{display:block;margin-top:2px}
+  .val-warn .item::before{content:"— ";color:var(--rule-2)}
+  .val-ok{
+    margin-top:8px;padding:6px 10px;
+    border:1px solid var(--ok);background:var(--ok-bg);
+    font-size:10px;letter-spacing:.03em;color:var(--ok);
+  }
+
+  .foot{
+    position:fixed;left:0;right:0;bottom:0;height:var(--foot-h);
+    display:flex;align-items:center;gap:10px;padding:0 20px;
+    border-top:1px solid var(--rule-2);background:var(--paper);
+    font-size:10px;letter-spacing:.08em;color:var(--muted);
+    font-variant-numeric:tabular-nums;z-index:20;
+  }
+  .foot-ver{color:var(--ink);font-weight:600;letter-spacing:.06em}
+  .foot-sep{color:var(--rule-2)}
+  .foot-spacer{flex:1 1 auto}
+  .foot-note{color:var(--muted)}
+  @media (max-width:600px){ .foot-note{display:none} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="mark">NQ</span>
+    <span class="name">NalarQuest</span>
+    <span class="tag">prototipe</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-mode="all" class="on">Semua</button>
+    <button data-mode="deductive">Deduktif</button>
+    <button data-mode="inductive">Induktif</button>
+    <button data-mode="abductive">Abduktif</button>
+  </nav>
+  <div class="hint">Input menyesuaikan JSON</div>
+</header>
+
+<main class="app">
+  <aside class="rail">
+    <section id="sec-diff">
+      <h2 class="lbl">Tingkat</h2>
+      <div class="seg" id="diff">
+        <button data-d="0" class="on">Semua</button>
+        <button data-d="1">1</button>
+        <button data-d="2">2</button>
+        <button data-d="3">3</button>
+      </div>
+    </section>
+    <section id="sec-src">
+      <h2 class="lbl">Sumber</h2>
+      <div class="seg" id="src-filter">
+        <button data-s="all" class="on">Semua</button>
+        <button data-s="template">Template</button>
+        <button data-s="static">Statis</button>
+      </div>
+    </section>
+    <section id="sec-principle">
+      <h2 class="lbl">Prinsip</h2>
+      <div class="p-list" id="principle-list"></div>
+    </section>
+    <section id="sec-session">
+      <h2 class="lbl">Sesi</h2>
+      <div class="session-panel" id="session-panel"></div>
+    </section>
+    <section>
+      <h2 class="lbl">Total</h2>
+      <dl class="ledger">
+        <div><dt>Benar</dt><dd id="s-ok">0</dd></div>
+        <div><dt>Salah</dt><dd id="s-no">0</dd></div>
+        <div><dt>Akurasi</dt><dd class="acc" id="s-acc">—</dd></div>
+        <div><dt>Streak</dt><dd id="s-st">0</dd></div>
+        <div><dt>Terbaik</dt><dd id="s-best">0</dd></div>
+      </dl>
+      <div class="calib-list" id="calib-total"></div>
+      <button class="btn-sm danger" id="reset-stats" style="margin-top:6px">Reset statistik</button>
+    </section>
+    <section id="sec-bank">
+      <h2 class="lbl">Bank</h2>
+      <div id="bank-status"></div>
+    </section>
+    <section id="sec-dataset">
+      <h2 class="lbl">Dataset</h2>
+      <div id="dataset-status" style="font-size:11px;line-height:1.6;color:var(--muted)">memuat&hellip;</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        <button class="btn-sm" id="ds-add">Tambah manual</button>
+        <button class="btn-sm" id="ds-load-file">Muat file JSON</button>
+        <button class="btn-sm" id="ds-reload">Muat ulang dataset</button>
+        <button class="btn-sm" id="ds-api" disabled title="Nonaktif &mdash; backend belum disiapkan">API backend (nonaktif)</button>
+      </div>
+      <input type="file" id="ds-file" accept=".json,application/json" style="display:none">
+      <div class="ds-list" id="ds-custom-list"></div>
+    </section>
+    <section>
+      <button class="btn" id="next">Soal baru</button>
+    </section>
+  </aside>
+
+  <section class="stage">
+    <div class="meta">
+      <span id="m-id">—</span>
+      <span><b id="m-tpl">—</b></span>
+      <span id="m-dom">—</span>
+      <span id="m-dif">—</span>
+      <span id="m-kind">—</span>
+      <span id="m-principle">—</span>
+      <span id="m-dist">—</span>
+      <span><span class="src-tag template" id="m-src">template</span></span>
+      <span id="m-session"></span>
+    </div>
+    <article>
+      <p class="prompt serif" id="prompt">Memuat…</p>
+      <div class="inputs" id="inputs"></div>
+      <div class="conf-slot" id="conf-slot"></div>
+      <div class="explain" id="explain" hidden></div>
+    </article>
+  </section>
+
+  <aside class="src">
+    <div class="src-head">
+      <h2 class="lbl">Sumber soal</h2>
+      <div class="seg small" id="srctabs">
+        <button data-t="soal" class="on">soal.json</button>
+        <button data-t="tpl">template</button>
+      </div>
+    </div>
+    <div class="redact-note" id="redact-note">
+      Field jawaban (<span style="color:var(--ink)">correct</span>,
+      <span style="color:var(--ink)">canonical</span>,
+      <span style="color:var(--ink)">answer</span>) disamarkan sebagai
+      <span style="color:var(--ink)">"…"</span> sampai soal dijawab.
+    </div>
+    <pre class="code" id="code"></pre>
+  </aside>
+</main>
+
+<footer class="foot">
+  <span class="foot-ver">NalarQuest v0.7.2</span>
+  <span class="foot-sep">/</span>
+  <span>2026-10-04</span>
+  <span class="foot-spacer"></span>
+  <span class="foot-note">redaksi explanation · reveal setelah commit · 80/20 vs lastKey</span>
+</footer>
+
+<script>
+/* ============================================================
+   0. Util
+   ============================================================ */
+const randInt = (a,b) => a + Math.floor(Math.random()*(b-a+1));
+function pickRandom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function hash(s){
+  let h = 2166136261;
+  for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619); }
+  return (h>>>0).toString(16).padStart(8,"0");
+}
+function evalExpr(expr, scope){
+  try{
+    const keys = Object.keys(scope);
+    return Function(...keys, "return (" + expr + ");")(...keys.map(k => scope[k]));
+  }catch(e){ return NaN; }
+}
+function render(tpl, scope){
+  return String(tpl).replace(/\{(\w+)\}/g, (m,k) => (k in scope ? scope[k] : m));
+}
+function normEq(a, b){
+  const sa = String(a ?? "").trim();
+  const sb = String(b ?? "").trim();
+  if(sa === "" || sb === "") return sa === sb;
+  const numRe = /^-?\d+(\.\d+)?$/;
+  if(numRe.test(sa) && numRe.test(sb)) return Number(sa) === Number(sb);
+  return sa.toLowerCase() === sb.toLowerCase();
+}
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function fmtSec(ms){
+  if(ms == null) return "—";
+  return (ms/1000).toFixed(1) + "s";
+}
+
+/* ============================================================
+   1. Template
+   Catatan perbaikan v0.7.1:
+   - ded.syl.fill: parts ditambah elemen penutup ""
+   - ind.symbol: n = "{s2}" (sebelumnya salah "{s1}")
+   - ded.trans.choice: contrast_with dikosongkan (kontras satu arah)
+   ============================================================ */
+const FALLBACK_TEMPLATES = [
+  {
+    id: "ded.trans.choice",
+    type: "deductive", domain: "angka",
+    principle: "transitivity", surface_domain: "angka", surface_distance: 0,
+    contrast_with: [],                       /* v0.7.1: kontras satu arah */
+    difficulty: 1,
+    vars: {
+      a: { kind:"int", min:30, max:99 },
+      b: { kind:"int", min:20, max:95 },
+      c: { kind:"int", min:10, max:90 }
+    },
+    constraints: ["a > b", "b > c"],
+    prompt: "Diketahui {a} > {b} dan {b} > {c}. Manakah kesimpulan yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "{a} > {c}", correct: true,
+          why: "Transitivitas: {a} > {b} dan {b} > {c} memaksa {a} > {c}." },
+        { text: "{c} > {a}", correct: false,
+          why: "Urutan terbalik. Tidak ada premis yang mendukung." },
+        { text: "{a} = {c}", correct: false,
+          why: "Kesamaan tidak pernah dinyatakan di premis." },
+        { text: "Tidak dapat ditentukan", correct: false,
+          why: "Justru dapat ditentukan secara pasti lewat transitivitas." }
+      ]
+    },
+    explain: "Relasi > bersifat transitif. Dari {a} > {b} dan {b} > {c}, maka {a} > {c}."
+  },
+  {
+    id: "ded.trans.symbol",
+    type: "deductive", domain: "simbol",
+    principle: "transitivity", surface_domain: "simbol", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 1,
+    vars: {
+      _: { kind:"pick", from: [
+        { a:"△", b:"□", c:"○" },
+        { a:"◇", b:"☆", c:"△" },
+        { a:"○", b:"△", c:"□" },
+        { a:"□", b:"◇", c:"☆" },
+        { a:"☆", b:"○", c:"◇" }
+      ]}
+    },
+    prompt: "Diketahui {a} > {b} dan {b} > {c}. Manakah kesimpulan yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "{a} > {c}", correct: true,
+          why: "Transitivitas berlaku untuk simbol apa pun. {a} > {b}, {b} > {c}, maka {a} > {c}." },
+        { text: "{c} > {a}", correct: false,
+          why: "Urutan terbalik. Tidak ada premis yang mendukung." },
+        { text: "{a} = {c}", correct: false,
+          why: "Kesamaan tidak pernah dinyatakan." },
+        { text: "Tidak dapat ditentukan", correct: false,
+          why: "Justru dapat ditentukan: {a} > {c}." }
+      ]
+    },
+    explain: "Prinsipnya sama seperti di angka. Relasi > tetap transitif."
+  },
+  {
+    id: "ded.trans.story",
+    type: "deductive", domain: "teks",
+    principle: "transitivity", surface_domain: "cerita", surface_distance: 2,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      _: { kind:"pick", from: [
+        { a:"Budi", b:"Ani",   c:"Cici",  rel:"lebih tinggi dari" },
+        { a:"Doni", b:"Eka",   c:"Fajar", rel:"lebih tua dari" },
+        { a:"Gita", b:"Hana",  c:"Indra", rel:"lebih cepat berlari dari" },
+        { a:"Joko", b:"Kiki",  c:"Lala",  rel:"lebih berat dari" },
+        { a:"Mira", b:"Nanda", c:"Oscar", rel:"lebih tinggi dari" }
+      ]}
+    },
+    prompt: "{a} {rel} {b}. {b} {rel} {c}. Manakah kesimpulan yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "{a} {rel} {c}", correct: true,
+          why: "Relasi '{rel}' bersifat transitif." },
+        { text: "{c} {rel} {a}", correct: false, why: "Urutan terbalik." },
+        { text: "{a} sama dengan {c}", correct: false, why: "Kesamaan tidak pernah dinyatakan." },
+        { text: "Tidak dapat ditentukan", correct: false,
+          why: "Justru dapat ditentukan: {a} {rel} {c}." }
+      ]
+    },
+    explain: "Relasi '{rel}' bersifat transitif. {a} {rel} {b}, {b} {rel} {c}, maka {a} {rel} {c}."
+  },
+  {
+    id: "ded.trans.time",
+    type: "deductive", domain: "teks",
+    principle: "transitivity", surface_domain: "waktu", surface_distance: 2,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      _: { kind:"pick", from: [
+        { a:"Rapat A", b:"Rapat B", c:"Rapat C",   rel:"dijadwalkan sebelum" },
+        { a:"Kereta P", b:"Kereta Q", c:"Kereta R", rel:"berangkat sebelum" },
+        { a:"Sesi 1", b:"Sesi 2", c:"Sesi 3",       rel:"dimulai sebelum" },
+        { a:"Tahap I", b:"Tahap II", c:"Tahap III", rel:"dilaksanakan sebelum" }
+      ]}
+    },
+    prompt: "{a} {rel} {b}. {b} {rel} {c}. Manakah kesimpulan yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "{a} {rel} {c}", correct: true,
+          why: "Relasi '{rel}' transitif." },
+        { text: "{c} {rel} {a}", correct: false, why: "Urutan terbalik." },
+        { text: "{a} dan {c} berlangsung bersamaan", correct: false,
+          why: "Tidak ada premis yang mendukung kesamaan waktu." },
+        { text: "Tidak dapat ditentukan", correct: false,
+          why: "Dapat ditentukan: {a} {rel} {c}." }
+      ]
+    },
+    explain: "Relasi '{rel}' bersifat transitif. Urutan waktu tidak bisa dibalik."
+  },
+  {
+    id: "ded.nontrans.num",
+    type: "deductive", domain: "angka",
+    principle: "transitivity", surface_domain: "angka", surface_distance: 0,
+    contrast_with: ["ded.trans.choice"],     /* v0.7.1: hanya ini yang menunjuk */
+    is_contrast: true,
+    difficulty: 2,
+    vars: {
+      a: { kind:"int", min:30, max:99 },
+      b: { kind:"int", min:20, max:95 },
+      c: { kind:"int", min:30, max:99 }
+    },
+    constraints: ["a > b", "c > b", "a != c"],
+    prompt: "Diketahui {a} > {b} dan {c} > {b}. Manakah kesimpulan yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "Tidak dapat ditentukan", correct: true,
+          why: "Kedua premis hanya membandingkan {a} dan {c} terhadap {b}. Hubungan antara {a} dan {c} tidak dinyatakan." },
+        { text: "{a} > {c}", correct: false,
+          why: "Menggoda karena terlihat seperti transitivitas. Tapi {b} berada di posisi akhir kedua premis — tidak membentuk rantai." },
+        { text: "{c} > {a}", correct: false,
+          why: "Sama. {b} di posisi akhir tidak memberi informasi apa pun." },
+        { text: "{a} = {c}", correct: false, why: "Kesamaan tidak pernah dinyatakan." }
+      ]
+    },
+    explain: "Bentuk {a} > {b} dan {c} > {b} BUKAN transitivitas. Transitivitas butuh {b} di posisi tengah."
+  },
+  {
+    id: "ded.syl.count",
+    type: "deductive", domain: "teks",
+    principle: "categorical_syllogism", surface_domain: "teks", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      _: { kind:"pick", from: [
+        { X:"elang",  Y:"burung",  Z:"hewan",    n:24 },
+        { X:"mawar",  Y:"bunga",   Z:"tumbuhan", n:18 },
+        { X:"paus",   Y:"mamalia", Z:"hewan",    n:12 },
+        { X:"pinus",  Y:"pohon",   Z:"tumbuhan", n:30 },
+        { X:"salmon", Y:"ikan",    Z:"hewan",    n:36 }
+      ]}
+    },
+    prompt: "Semua {X} adalah {Y}. Semua {Y} adalah {Z}. Jika ada {n} {X}, berapa banyak {X} yang juga {Z}?",
+    input: { kind: "keypad", maxLength: 4, canonical: "{n}" },
+    explain: "Karena {X} ⊆ {Y} dan {Y} ⊆ {Z}, seluruh {X} pasti termasuk {Z}. Jawabannya = {n}."
+  },
+  {
+    id: "ded.syl.fill",
+    type: "deductive", domain: "teks",
+    principle: "categorical_syllogism", surface_domain: "teks", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      _: { kind:"pick", from: [
+        { X:"kucing",  Y:"mamalia", Z:"hewan" },
+        { X:"mawar",   Y:"bunga",   Z:"tumbuhan" },
+        { X:"merpati", Y:"burung",  Z:"hewan" },
+        { X:"pinus",   Y:"pohon",   Z:"tumbuhan" }
+      ]}
+    },
+    prompt: "Semua {X} adalah {Y}. Semua {Y} adalah {Z}. Lengkapi kesimpulan berikut.",
+    input: {
+      kind: "fill",
+      /* v0.7.1: parts = 3 elemen, slots = 2 → parts.length = slots.length + 1 */
+      parts: ["Semua ", " adalah ", ""],
+      slots: [
+        { answer: "{X}", width: 12 },
+        { answer: "{Z}", width: 12 }
+      ],
+      keys: ["kucing","mamalia","hewan","mawar","bunga","tumbuhan",
+             "merpati","burung","pinus","pohon"],
+      layout: [5,5]
+    },
+    explain: "Karena {X} ⊆ {Y} dan {Y} ⊆ {Z}, maka semua {X} juga {Z}."
+  },
+  {
+    id: "ded.modpon",
+    type: "deductive", domain: "teks",
+    principle: "modus_ponens", surface_domain: "teks", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      _: { kind:"pick", from: [
+        { P:"hujan turun",    Q:"jalan basah",      nQ:"jalan tidak basah" },
+        { P:"saklar ditekan", Q:"lampu menyala",    nQ:"lampu tidak menyala" },
+        { P:"berkas dihapus", Q:"penyimpanan lega", nQ:"penyimpanan tidak lega" }
+      ]}
+    },
+    prompt: "Jika {P}, maka {Q}. Diketahui bahwa {P}. Apa yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "{Q}", correct: true, why: "Modus ponens: P → Q dan P, maka Q." },
+        { text: "{nQ}", correct: false,
+          why: "Bertentangan langsung dengan implikasi dan premis." },
+        { text: "Jika {Q}, maka {P}", correct: false,
+          why: "Membalik arah implikasi — kekeliruan klasik." },
+        { text: "Tidak ada yang bisa disimpulkan", correct: false,
+          why: "Justru ada yang bisa disimpulkan: {Q}." }
+      ]
+    },
+    explain: "Modus ponens. Pilihan \u201cjika {Q} maka {P}\u201d keliru karena membalik implikasi."
+  },
+  {
+    id: "ind.arit",
+    type: "inductive", domain: "angka",
+    principle: "arithmetic_sequence", surface_domain: "angka", surface_distance: 0,
+    contrast_with: [],
+    difficulty: 1,
+    vars: {
+      a:  { kind:"int", min:1, max:12 },
+      d:  { kind:"int", min:3, max:9 },
+      s1: { kind:"expr", expr:"a" },
+      s2: { kind:"expr", expr:"a+d" },
+      s3: { kind:"expr", expr:"a+2*d" },
+      s4: { kind:"expr", expr:"a+3*d" },
+      n5: { kind:"expr", expr:"a+4*d" }
+    },
+    prompt: "Perhatikan deret: {s1}, {s2}, {s3}, {s4}, … Bilangan berikutnya adalah?",
+    input: { kind: "keypad", maxLength: 4, canonical: "{n5}" },
+    explain: "Selisih antar suku tetap {d}. Suku berikutnya = {s4} + {d} = {n5}."
+  },
+  {
+    id: "ind.geo",
+    type: "inductive", domain: "angka",
+    principle: "geometric_sequence", surface_domain: "angka", surface_distance: 0,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      a:  { kind:"int", min:2, max:4 },
+      r:  { kind:"int", min:2, max:3 },
+      s1: { kind:"expr", expr:"a" },
+      s2: { kind:"expr", expr:"a*r" },
+      s3: { kind:"expr", expr:"a*r*r" },
+      s4: { kind:"expr", expr:"a*r*r*r" },
+      n5: { kind:"expr", expr:"a*r*r*r*r" }
+    },
+    prompt: "Perhatikan deret: {s1}, {s2}, {s3}, {s4}, … Bilangan berikutnya adalah?",
+    input: { kind: "keypad", maxLength: 5, canonical: "{n5}" },
+    explain: "Setiap suku dikalikan {r}. Suku berikutnya = {s4} × {r} = {n5}."
+  },
+  {
+    id: "ind.symbol",
+    type: "inductive", domain: "simbol",
+    principle: "alternating_pattern", surface_domain: "simbol", surface_distance: 0,
+    contrast_with: [],
+    difficulty: 1,
+    vars: {
+      _: { kind:"pick", from: [
+        /* v0.7.1: n = "{s2}" — sebelumnya "{s1}" (salah) */
+        { s1:"△", s2:"□", n:"□" },
+        { s1:"○", s2:"△", n:"△" },
+        { s1:"◇", s2:"○", n:"○" },
+        { s1:"☆", s2:"△", n:"△" }
+      ]}
+    },
+    prompt: "Perhatikan pola: {s1}, {s2}, {s1}, {s2}, {s1}, … Simbol berikutnya adalah?",
+    input: {
+      kind: "palette", maxLength: 1, canonical: "{n}",
+      keys: ["△","□","○","◇","☆","⌫","⏎"],
+      layout: [5,2]
+    },
+    explain: "Pola bergantian {s1} dan {s2}. Setelah {s1}, simbol berikutnya adalah {s2}."
+  },
+  {
+    id: "abd.sebab",
+    type: "abductive", domain: "teks",
+    principle: "best_explanation", surface_domain: "teks", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 2,
+    vars: {
+      _: { kind:"pick", from: [
+        {
+          obs: "Halaman rumah basah padahal langit cerah dan tidak ada hujan semalam.",
+          ok: "Sprinkler taman menyala pagi ini",
+          d1: "Hujan deras turun semalam",
+          d2: "Angin membawa uap dari sungai",
+          d3: "Halaman memang selalu basah",
+          why: "Sprinkler yang menyala langsung menjelaskan halaman basah; hujan sudah disangkal konteks."
+        },
+        {
+          obs: "Lampu satu ruangan mati, tetapi lampu di ruangan lain tetap menyala.",
+          ok: "Sekring ruangan itu putus",
+          d1: "PLN memadamkan listrik seluruh rumah",
+          d2: "Lampu ruangan itu memang redup",
+          d3: "Tidak ada penjelasan yang mungkin",
+          why: "Gangguan bersifat lokal, cocok dengan sekring ruangan."
+        },
+        {
+          obs: "Pintu rumah terbuka, tidak ada barang hilang, dan kucing peliharaan tidak ada.",
+          ok: "Kucing mendorong pintu lalu keluar",
+          d1: "Maling masuk tanpa mengambil apa pun",
+          d2: "Pintu memang tidak pernah dikunci",
+          d3: "Angin kencang membuka pintu",
+          why: "Satu peristiwa menjelaskan dua gejala sekaligus — lebih sederhana."
+        }
+      ]}
+    },
+    prompt: "{obs} Penjelasan terbaik adalah?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "{ok}", correct: true, why: "{why}" },
+        { text: "{d1}", correct: false, why: "Tidak menjelaskan seluruh petunjuk dalam konteks." },
+        { text: "{d2}", correct: false, why: "Terlalu umum, tidak mengikat ke gejala utama." },
+        { text: "{d3}", correct: false, why: "Bertentangan dengan fakta yang ada." }
+      ]
+    },
+    explain: "{why}"
+  }
+];
+
+/* ============================================================
+   2. Bank statis
+   Catatan v0.7.1: field 'explanation' (bukan 'explain')
+   ============================================================ */
+const FALLBACK_STATIC = [
+  {
+    id: "static-001", source: "static", template_id: null,
+    type: "deductive", domain: "teks",
+    principle: "categorical_syllogism", surface_domain: "teks", surface_distance: 0,
+    contrast_with: [],
+    difficulty: 2,
+    prompt: "Semua manusia adalah makhluk fana. Sokrates adalah manusia. Apa yang pasti benar?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "Sokrates adalah makhluk fana", correct: true,
+          why: "Silogisme kategoris: Sokrates ∈ manusia, manusia ⊆ makhluk fana." },
+        { text: "Sokrates bukan makhluk fana", correct: false,
+          why: "Bertentangan langsung dengan kedua premis." },
+        { text: "Semua makhluk fana adalah Sokrates", correct: false,
+          why: "Membalik relasi himpunan — tidak sah." },
+        { text: "Tidak dapat ditentukan", correct: false,
+          why: "Justru dapat ditentukan secara pasti." }
+      ]
+    },
+    explanation: "Karena Sokrates termasuk manusia, dan semua manusia termasuk makhluk fana, Sokrates pasti makhluk fana."
+  },
+  {
+    id: "static-002", source: "static", template_id: null,
+    type: "inductive", domain: "angka",
+    principle: "prime_sequence", surface_domain: "angka", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 3,
+    prompt: "Perhatikan deret: 2, 3, 5, 7, 11, … Bilangan berikutnya adalah?",
+    /* v0.7.1: tambah keys+layout eksplisit supaya static-002 tidak crash */
+    input: {
+      kind: "keypad",
+      maxLength: 3,
+      canonical: "13",
+      keys: ["1","2","3","4","5","6","7","8","9","⌫","0","⏎"],
+      layout: [3,3,3]
+    },
+    explanation: "Deret ini adalah bilangan prima berurutan. Setelah 11, bilangan prima berikutnya adalah 13."
+  },
+  {
+    id: "static-003", source: "static", template_id: null,
+    type: "deductive", domain: "teks",
+    principle: "transitivity", surface_domain: "cerita", surface_distance: 2,
+    contrast_with: [],
+    difficulty: 3,
+    prompt: "Jika A lebih tua dari B, dan B lebih tua dari C, dan C lebih tua dari D, maka siapa yang paling tua?",
+    input: {
+      kind: "fill",
+      parts: ["Yang paling tua adalah "],
+      slots: [ { answer: "A", width: 8 } ],
+      keys: ["A", "B", "C", "D"],
+      layout: [4]
+    },
+    explanation: "Relasi 'lebih tua dari' transitif. Rantai A > B > C > D menempatkan A di posisi tertinggi."
+  },
+  {
+    id: "static-004", source: "static", template_id: null,
+    type: "abductive", domain: "teks",
+    principle: "best_explanation", surface_domain: "teks", surface_distance: 1,
+    contrast_with: [],
+    difficulty: 2,
+    prompt: "Jejak kaki basah menuju pintu dapur, dan handuk di dekat pintu dalam keadaan lembap. Penjelasan terbaik adalah?",
+    input: {
+      kind: "choice", shuffle: true,
+      options: [
+        { text: "Seseorang baru masuk dari luar saat hujan lalu mengelap kakinya", correct: true,
+          why: "Dua petunjuk — jejak basah dan handuk lembap — dijelaskan oleh satu peristiwa." },
+        { text: "Handuk memang sudah lama lembap", correct: false,
+          why: "Tidak menjelaskan jejak kaki basah yang mengarah ke pintu." },
+        { text: "Ada kebocoran air di dekat pintu", correct: false,
+          why: "Tidak menjelaskan mengapa handuk juga lembap." },
+        { text: "Tidak ada penjelasan yang masuk akal", correct: false,
+          why: "Justru ada: satu peristiwa menjelaskan kedua gejala." }
+      ]
+    },
+    explanation: "Dua gejala yang saling terkait paling ekonomis dijelaskan oleh satu peristiwa tunggal."
+  }
+];
+
+/* ============================================================
+   2b. Dataset: file JSON eksternal, mode API (NONAKTIF), input manual
+   v0.7.2: dataset dipisah ke nalarquest-dataset.json.
+   - Dibuka via http(s): dataset dimuat dari file JSON (fetch).
+   - Dibuka via file:// : fetch diblokir browser -> pakai data bawaan (fallback).
+   ============================================================ */
+const DATASET_URL = "nalarquest-dataset.json";
+let TEMPLATES = [];      /* diisi saat boot */
+let STATIC_BANK = [];    /* diisi saat boot */
+
+/* ---------- Mode API backend: NONAKTIF ----------
+   Kode di bawah lengkap dan siap pakai, tetapi sengaja dimatikan
+   sampai backend disiapkan.
+   Kontrak REST JSON yang diharapkan dari backend:
+     GET {baseUrl}/api/dataset
+       -> { "version": "x.y.z",
+            "templates": [ <entri template, format = nalarquest-dataset.json> ],
+            "static":    [ <entri soal statis> ] }
+     (cadangan, belum dipakai)
+     GET {baseUrl}/api/question?principle=..&type=..&difficulty=..
+       -> satu objek entri template/statis
+   Cara mengaktifkan nanti:
+     API_CONFIG.enabled = true;
+     API_CONFIG.baseUrl = "https://api.milik-anda.id";
+     useApiDataset();
+*/
+const API_CONFIG = {
+  enabled: false,   /* <-- tetap false sampai backend siap */
+  baseUrl: "",      /* mis. "https://api.milik-anda.id" */
+  endpoints: { dataset: "/api/dataset", question: "/api/question" },
+  timeoutMs: 8000
+};
+
+const datasetState = {
+  source: "memuat\u2026",   /* file | bawaan | api | campuran */
+  note: "",
+  customIds: []        /* id entri hasil tambah-manual / muat-file */
+};
+
+async function fetchWithTimeout(url, ms){
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { signal: ctl.signal, cache: "no-store" }); }
+  finally { clearTimeout(t); }
+}
+
+function applyDataset(data, sourceLabel){
+  const tpl = Array.isArray(data.templates) ? data.templates : [];
+  const stc = Array.isArray(data.static) ? data.static : [];
+  /* entri kustom (manual/file) dipertahankan agar tidak hilang saat reload */
+  const keep = new Set(datasetState.customIds);
+  const customTpl = TEMPLATES.filter(t => keep.has(t.id));
+  const customStc = STATIC_BANK.filter(s => keep.has(s.id));
+  TEMPLATES = tpl.concat(customTpl);
+  STATIC_BANK = stc.concat(customStc);
+  datasetState.source = sourceLabel;
+}
+
+async function loadDataset(){
+  try {
+    const res = await fetchWithTimeout(DATASET_URL, 5000);
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if(!Array.isArray(data.templates) && !Array.isArray(data.static))
+      throw new Error("format JSON tidak dikenali");
+    applyDataset(data, "file");
+    datasetState.note = DATASET_URL;
+  } catch(e) {
+    TEMPLATES = FALLBACK_TEMPLATES.slice();
+    STATIC_BANK = FALLBACK_STATIC.slice();
+    datasetState.source = "bawaan";
+    datasetState.note = "tidak bisa memuat " + DATASET_URL + " \u2014 pakai data bawaan";
+  }
+  drawDatasetPanel();
+}
+
+/* ---------- API backend (lengkap, tapi NONAKTIF) ---------- */
+async function fetchDatasetFromAPI(){
+  if(!API_CONFIG.enabled) throw new Error("mode API nonaktif (API_CONFIG.enabled = false)");
+  if(!API_CONFIG.baseUrl) throw new Error("API_CONFIG.baseUrl belum diisi");
+  const url = API_CONFIG.baseUrl.replace(/\/+$/, "") + API_CONFIG.endpoints.dataset;
+  const res = await fetchWithTimeout(url, API_CONFIG.timeoutMs);
+  if(!res.ok) throw new Error("API HTTP " + res.status);
+  return res.json();
+}
+async function useApiDataset(){
+  /* Dipakai nanti setelah backend siap dan API_CONFIG diaktifkan. */
+  const data = await fetchDatasetFromAPI();
+  applyDataset(data, "api");
+  datasetState.note = API_CONFIG.baseUrl + API_CONFIG.endpoints.dataset;
+  refreshAfterDatasetChange();
+}
+
+/* ---------- Tambah / hapus manual ---------- */
+function addDatasetEntry(kind, obj, deferRefresh){
+  /* kind: "template" | "static". Return {ok, id?, errors?} */
+  if(!obj || typeof obj !== "object" || Array.isArray(obj))
+    return { ok:false, errors:["JSON harus berupa satu objek (bukan array)"] };
+  const errs = validateTemplate(obj);
+  if(errs.length) return { ok:false, errors:errs };
+  const allIds = new Set(TEMPLATES.map(t => t.id).concat(STATIC_BANK.map(s => s.id)));
+  if(!obj.id || allIds.has(obj.id))
+    return { ok:false, errors:["id kosong atau sudah dipakai: " + obj.id] };
+  if(kind === "static"){
+    obj.source = "static";
+    if(obj.template_id === undefined) obj.template_id = null;
+    STATIC_BANK.push(obj);
+  } else {
+    TEMPLATES.push(obj);
+  }
+  datasetState.customIds.push(obj.id);
+  if(datasetState.source === "file" || datasetState.source === "bawaan" || datasetState.source === "api")
+    datasetState.source = "campuran";
+  if(!deferRefresh) refreshAfterDatasetChange();
+  return { ok:true, id: obj.id };
+}
+
+function removeDatasetEntry(id){
+  const ti = TEMPLATES.findIndex(t => t.id === id);
+  if(ti >= 0) TEMPLATES.splice(ti, 1);
+  const si = STATIC_BANK.findIndex(s => s.id === id);
+  if(si >= 0) STATIC_BANK.splice(si, 1);
+  datasetState.customIds = datasetState.customIds.filter(x => x !== id);
+  refreshAfterDatasetChange();
+}
+
+function guessKind(o){
+  if(o && (o.source === "static" || (o.explanation !== undefined && o.vars === undefined))) return "static";
+  return "template";
+}
+
+function importDatasetObject(data){
+  /* Terima {templates:[], static:[]}, array, atau satu objek. */
+  let added = 0, failed = 0;
+  const items = [];
+  if(data && typeof data === "object" && !Array.isArray(data) && (data.templates || data.static)){
+    (data.templates || []).forEach(o => items.push(["template", o]));
+    (data.static || []).forEach(o => items.push(["static", o]));
+  } else if(Array.isArray(data)){
+    data.forEach(o => items.push([guessKind(o), o]));
+  } else if(data && typeof data === "object"){
+    items.push([guessKind(data), data]);
+  }
+  items.forEach(([k, o]) => {
+    const r = addDatasetEntry(k, o, true);
+    if(r.ok) added++;
+    else { failed++; console.warn("[dataset] impor gagal:", o && o.id, r.errors); }
+  });
+  refreshAfterDatasetChange();
+  return { added, failed };
+}
+
+function refreshAfterDatasetChange(){
+  runValidation();
+  drawBankStatus();
+  drawPrincipleList();
+  drawSession();
+  drawDatasetPanel();
+  nextSoal();
+}
+
+/* ---------- Panel dataset ---------- */
+function drawDatasetPanel(){
+  const el = document.getElementById("dataset-status");
+  if(!el) return;
+  const v = state.validation || { validCount: 0 };
+  el.innerHTML =
+    "Sumber: <b>" + escapeHtml(String(datasetState.source)) + "</b><br>" +
+    "Template: " + TEMPLATES.length + " &middot; Statis: " + STATIC_BANK.length +
+    " &middot; Valid: " + v.validCount +
+    (datasetState.note ? "<br>" + escapeHtml(datasetState.note) : "") +
+    "<br>Mode API backend: <b>nonaktif</b>";
+  const list = document.getElementById("ds-custom-list");
+  if(!list) return;
+  if(!datasetState.customIds.length){ list.innerHTML = ""; return; }
+  list.innerHTML = "<div class=\"ds-tag\">Entri kustom (" + datasetState.customIds.length + ")</div>" +
+    datasetState.customIds.map(id =>
+      "<div class=\"ds-item\"><span>" + escapeHtml(id) + "</span>" +
+      "<button class=\"ds-del\" data-id=\"" + escapeHtml(id) + "\">hapus</button></div>"
+    ).join("");
+  list.querySelectorAll(".ds-del").forEach(b =>
+    b.addEventListener("click", () => removeDatasetEntry(b.getAttribute("data-id"))));
+}
+
+/* ---------- Contoh entri untuk form manual ---------- */
+const DS_EXAMPLE_TEMPLATE = {
+  id: "manual-tpl-001",
+  type: "deductive",
+  domain: "teks",
+  principle: "prinsip_baru",
+  surface_domain: "teks",
+  surface_distance: 0,
+  difficulty: 1,
+  prompt: "Jika semua A adalah B, dan X adalah A, manakah simpulan yang pasti benar?",
+  input: {
+    kind: "choice",
+    shuffle: true,
+    options: [
+      { text: "X adalah B", correct: true, why: "Mengikuti kedua premis." },
+      { text: "X bukan B", correct: false, why: "Bertentangan dengan premis." }
+    ]
+  },
+  explain: "Penjelasan mengapa jawaban tersebut benar."
+};
+const DS_EXAMPLE_STATIC = {
+  id: "manual-static-001",
+  source: "static",
+  template_id: null,
+  type: "deductive",
+  domain: "teks",
+  principle: "prinsip_baru",
+  surface_domain: "teks",
+  surface_distance: 0,
+  difficulty: 1,
+  prompt: "Contoh soal statis: tuliskan pertanyaan di sini.",
+  input: {
+    kind: "choice",
+    shuffle: true,
+    options: [
+      { text: "Jawaban benar", correct: true, why: "Alasan jawaban benar." },
+      { text: "Pengecoh", correct: false, why: "Alasan opsi ini salah." }
+    ]
+  },
+  explanation: "Penjelasan soal statis."
+};
+
+/* ---------- UI: modal tambah manual + muat file ---------- */
+function initDatasetUI(){
+  document.body.insertAdjacentHTML("beforeend",
+    '<div class="modal-back" id="ds-modal" style="display:none">' +
+    '<div class="modal" role="dialog" aria-label="Tambah dataset manual">' +
+    '<h3>Tambah dataset manual</h3>' +
+    '<div class="ds-formrow">' +
+    '<select id="ds-kind"><option value="template">Template</option><option value="static">Soal statis</option></select>' +
+    '<button class="btn-sm" id="ds-example">Isi contoh</button>' +
+    '</div>' +
+    '<textarea id="ds-json" spellcheck="false" placeholder=\'{"id": "...", ...}\'></textarea>' +
+    '<div class="msg" id="ds-msg"></div>' +
+    '<div class="row">' +
+    '<button class="btn-sm primary" id="ds-validate">Validasi</button>' +
+    '<button class="btn-sm primary" id="ds-save">Tambahkan</button>' +
+    '<button class="btn-sm" id="ds-close">Tutup</button>' +
+    '</div></div></div>');
+
+  const modal = document.getElementById("ds-modal");
+  const ta = document.getElementById("ds-json");
+  const msg = document.getElementById("ds-msg");
+  const kind = () => document.getElementById("ds-kind").value;
+  const setMsg = (t, cls) => { msg.textContent = t; msg.className = "msg " + cls; };
+
+  document.getElementById("ds-add").addEventListener("click", () => {
+    setMsg("", ""); modal.style.display = "flex";
+  });
+  document.getElementById("ds-close").addEventListener("click", () => { modal.style.display = "none"; });
+  modal.addEventListener("click", e => { if(e.target === modal) modal.style.display = "none"; });
+  document.getElementById("ds-example").addEventListener("click", () => {
+    ta.value = JSON.stringify(kind() === "static" ? DS_EXAMPLE_STATIC : DS_EXAMPLE_TEMPLATE, null, 2);
+  });
+  function parseTextarea(){
+    try { return { obj: JSON.parse(ta.value) }; }
+    catch(e){ return { error: "JSON tidak valid: " + e.message }; }
+  }
+  document.getElementById("ds-validate").addEventListener("click", () => {
+    const pr = parseTextarea();
+    if(pr.error){ setMsg(pr.error, "err"); return; }
+    const errs = validateTemplate(pr.obj);
+    if(errs.length) setMsg("Ditemukan " + errs.length + " masalah:\n\u2022 " + errs.join("\n\u2022 "), "err");
+    else setMsg("Valid \u2014 siap ditambahkan.", "ok");
+  });
+  document.getElementById("ds-save").addEventListener("click", () => {
+    const pr = parseTextarea();
+    if(pr.error){ setMsg(pr.error, "err"); return; }
+    const r = addDatasetEntry(kind(), pr.obj);
+    if(!r.ok) setMsg("Gagal:\n\u2022 " + r.errors.join("\n\u2022 "), "err");
+    else { setMsg("Ditambahkan: " + r.id, "ok"); ta.value = ""; }
+  });
+
+  const fileInput = document.getElementById("ds-file");
+  document.getElementById("ds-load-file").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const f = fileInput.files[0];
+    if(!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      let data;
+      try { data = JSON.parse(rd.result); }
+      catch(e){ alert("File bukan JSON valid: " + e.message); fileInput.value = ""; return; }
+      const res = importDatasetObject(data);
+      alert("Impor selesai: " + res.added + " ditambahkan" +
+        (res.failed ? ", " + res.failed + " gagal (lihat konsol)" : ""));
+      fileInput.value = "";
+    };
+    rd.readAsText(f);
+  });
+
+  document.getElementById("ds-reload").addEventListener("click", async () => {
+    datasetState.source = "memuat\u2026"; datasetState.note = ""; drawDatasetPanel();
+    await loadDataset();
+    refreshAfterDatasetChange();
+  });
+}
+
+
+/* ============================================================
+   3. Validasi template (v0.7.1: perbaiki aturan)
+   ============================================================ */
+function validateTemplate(tpl){
+  const errs = [];
+  const req = ["id", "type", "principle", "surface_domain",
+               "surface_distance", "difficulty", "prompt", "input"];
+  req.forEach(f => { if(tpl[f] === undefined) errs.push("field '" + f + "' kosong"); });
+
+  /* v0.7.1: bank statis memakai 'explanation', template memakai 'explain' */
+  const hasExplain =
+    (tpl.explain !== undefined) || (tpl.explanation !== undefined);
+  if(!hasExplain) errs.push("field 'explain'/'explanation' kosong");
+
+  if(!tpl.input){ return errs; }
+
+  const inp = tpl.input;
+  if(!inp.kind) errs.push("input.kind kosong");
+  else if(!["choice", "keypad", "palette", "fill"].includes(inp.kind))
+    errs.push("input.kind tidak dikenali: " + inp.kind);
+
+  if(inp.kind === "choice"){
+    if(!Array.isArray(inp.options) || inp.options.length < 2)
+      errs.push("choice: opsi minimal 2");
+    else {
+      const correct = inp.options.filter(o => o.correct === true).length;
+      if(correct !== 1) errs.push("choice: harus tepat 1 opsi benar (ada " + correct + ")");
+      const texts = inp.options.map(o => String(o.text));
+      if(new Set(texts).size !== texts.length) errs.push("choice: teks opsi duplikat");
+    }
+  }
+  if(inp.kind === "keypad"){
+    if(!inp.canonical) errs.push("keypad: 'canonical' wajib");
+    if(inp.maxLength != null && (typeof inp.maxLength !== "number" || inp.maxLength < 1))
+      errs.push("keypad: maxLength harus angka ≥1");
+  }
+  if(inp.kind === "palette"){
+    if(!inp.canonical) errs.push("palette: 'canonical' wajib");
+    if(!Array.isArray(inp.keys) || !inp.keys.length) errs.push("palette: 'keys' wajib");
+  }
+  if(inp.kind === "fill"){
+    if(!Array.isArray(inp.slots) || !inp.slots.length) errs.push("fill: 'slots' wajib");
+    if(!Array.isArray(inp.parts)) errs.push("fill: 'parts' wajib");
+    /* v0.7.1: parts boleh lebih pendek dari slots+1 asalkan renderer toleran */
+    else if(inp.slots){
+      if(inp.parts.length < inp.slots.length)
+        errs.push("fill: 'parts' kurang dari 'slots' (butuh minimal " + inp.slots.length + ")");
+      if(inp.parts.length > inp.slots.length + 1)
+        errs.push("fill: 'parts' lebih dari slots.length + 1");
+    }
+    if(inp.slots && inp.slots.some(s => !s.answer))
+      errs.push("fill: setiap slot harus punya 'answer'");
+  }
+  return errs;
+}
+function runValidation(){
+  const validIds = new Set();
+  const invalid = [];
+  TEMPLATES.forEach(t => {
+    const errs = validateTemplate(t);
+    if(errs.length) invalid.push({ id: t.id || "(tanpa id)", errors: errs });
+    else validIds.add(t.id);
+  });
+  STATIC_BANK.forEach(s => {
+    const errs = validateTemplate(s);
+    if(errs.length) invalid.push({ id: s.id || "(tanpa id)", errors: errs });
+    else validIds.add(s.id);
+  });
+  state.validation = {
+    validCount: validIds.size,
+    invalid,
+    validIds
+  };
+}
+
+/* ============================================================
+   4. Instantiate
+   ============================================================ */
+function resolveVars(spec){
+  const scope = {};
+  for(const [k,s] of Object.entries(spec || {})){
+    if(s.kind === "int"){
+      scope[k] = randInt(s.min, s.max);
+    } else if(s.kind === "pick"){
+      const it = s.from[randInt(0, s.from.length - 1)];
+      if(it && typeof it === "object") Object.assign(scope, it);
+      else scope[k] = it;
+    } else if(s.kind === "expr"){
+      scope[k] = evalExpr(s.expr, scope);
+    }
+  }
+  return scope;
+}
+function checkConstraints(cs, scope){
+  if(!cs || !cs.length) return true;
+  try { return cs.every(c => evalExpr(c, scope)); }
+  catch(e){ return false; }
+}
+function buildInput(spec, scope){
+  if(!spec || !spec.kind) return null;
+
+  if(spec.kind === "choice"){
+    const opts = spec.options.map(o => ({
+      text:    render(o.text, scope),
+      correct: !!o.correct,
+      why:     o.why ? render(o.why, scope) : null
+    }));
+    if(spec.shuffle !== false) shuffle(opts);
+    const texts = opts.map(o => o.text);
+    if(new Set(texts).size !== texts.length) return null;
+    if(opts.filter(o => o.correct).length !== 1) return null;
+    return { kind:"choice", options: opts };
+  }
+
+  if(spec.kind === "keypad"){
+    if(!spec.canonical) return null;
+    return {
+      kind: "keypad",
+      maxLength: spec.maxLength || 6,
+      canonical: render(spec.canonical, scope),
+      keys:   spec.keys   || ["1","2","3","4","5","6","7","8","9","⌫","0","⏎"],
+      layout: spec.layout || [3,3,3]
+    };
+  }
+
+  if(spec.kind === "palette"){
+    if(!spec.canonical || !spec.keys) return null;
+    return {
+      kind: "palette",
+      maxLength: spec.maxLength || 4,
+      canonical: render(spec.canonical, scope),
+      keys: spec.keys.map(k => render(k, scope)),
+      layout: spec.layout || [spec.keys.length]
+    };
+  }
+
+  if(spec.kind === "fill"){
+    if(!spec.slots || !spec.slots.length) return null;
+    const slots = spec.slots.map(sl => ({
+      answer: render(sl.answer, scope),
+      width:  sl.width || 12
+    }));
+    const parts = (spec.parts || []).map(p => render(p, scope));
+    if(parts.length < slots.length) return null;
+    const out = { kind:"fill", parts, slots };
+    if(spec.keys && spec.keys.length){
+      out.keys = spec.keys.map(k => render(k, scope));
+      out.layout = spec.layout || [spec.keys.length];
+    }
+    return out;
+  }
+
+  return null;
+}
+function instantiate(tpl){
+  for(let attempt = 0; attempt < 400; attempt++){
+    const scope = resolveVars(tpl.vars || {});
+    if(!checkConstraints(tpl.constraints, scope)) continue;
+    const input = buildInput(tpl.input, scope);
+    if(!input) continue;
+
+    return {
+      id: hash(tpl.id + render(tpl.prompt, scope)).slice(0, 6),
+      source: "template",
+      template_id: tpl.id,
+      type: tpl.type,
+      domain: tpl.domain,
+      principle: tpl.principle,
+      surface_domain: tpl.surface_domain,
+      surface_distance: tpl.surface_distance,
+      contrast_with: tpl.contrast_with || [],
+      is_contrast: !!tpl.is_contrast,
+      difficulty: tpl.difficulty,
+      prompt: render(tpl.prompt, scope),
+      explanation: render(tpl.explain || tpl.explanation || "", scope),
+      input
+    };
+  }
+  return null;
+}
+
+/* ============================================================
+   5. Pool & pick
+   ============================================================ */
+function matchesItem(item, filters, sourceKind){
+  /* v0.7.1: entri yang ditolak validasi tidak pernah masuk pool */
+  if(!state.validation.validIds.has(item.id)) return false;
+  if(sourceKind === "static"  && filters.srcFilter === "template") return false;
+  if(sourceKind === "template"&& filters.srcFilter === "static")   return false;
+  if(filters.mode !== "all" && item.type !== filters.mode) return false;
+  if(filters.diff !== 0 && item.difficulty !== filters.diff) return false;
+  if(filters.principle !== "all" && item.principle !== filters.principle) return false;
+  return true;
+}
+function availablePrinciples(filters){
+  const set = new Set();
+  TEMPLATES.forEach(t => {
+    if(matchesItem(t, filters, "template")) set.add(t.principle);
+  });
+  STATIC_BANK.forEach(s => {
+    if(matchesItem(s, filters, "static")) set.add(s.principle);
+  });
+  return [...set].sort();
+}
+function pickSoal(filters){
+  const staticCandidates = STATIC_BANK.filter(s => matchesItem(s, filters, "static"));
+  const tplCandidates = TEMPLATES.filter(t => matchesItem(t, filters, "template"));
+
+  const hasStatic   = staticCandidates.length > 0;
+  const hasTemplate = tplCandidates.length > 0;
+  if(!hasStatic && !hasTemplate) return null;
+
+  let useStatic;
+  if(!hasStatic) useStatic = false;
+  else if(!hasTemplate) useStatic = true;
+  else useStatic = Math.random() < 0.30;
+
+  if(useStatic){
+    const s = staticCandidates[randInt(0, staticCandidates.length - 1)];
+    /* v0.7.1: soal statis lewat buildInput supaya default keys/layout terpasang */
+    return instantiateStatic(s);
+  }
+
+  for(let i = 0; i < 40; i++){
+    const t = tplCandidates[randInt(0, tplCandidates.length - 1)];
+    const soal = instantiate(t);
+    if(soal) return soal;
+  }
+  return null;
+}
+function instantiateStatic(s){
+  /* lewat buildInput supaya default keys/layout terisi */
+  const input = buildInput(s.input, {});
+  if(!input) return null;
+  return {
+    id: s.id,
+    source: "static",
+    template_id: null,
+    type: s.type,
+    domain: s.domain,
+    principle: s.principle,
+    surface_domain: s.surface_domain,
+    surface_distance: s.surface_distance,
+    contrast_with: s.contrast_with || [],
+    is_contrast: !!s.is_contrast,
+    difficulty: s.difficulty,
+    prompt: s.prompt,
+    explanation: s.explanation || s.explain || "",
+    input
+  };
+}
+
+/* ============================================================
+   6. Session (adaptive)
+   ============================================================ */
+function isContrastSrc(src){
+  return Array.isArray(src.contrast_with) && src.contrast_with.length > 0;
+}
+function sessionPool(principle){
+  const filters = {
+    mode: state.mode, diff: state.diff,
+    srcFilter: state.srcFilter, principle
+  };
+  const pool = [];
+  TEMPLATES.forEach(t => {
+    if(!matchesItem(t, filters, "template")) return;
+    pool.push({ kind: "template", tpl: t, src: t, contrast: isContrastSrc(t) });
+  });
+  STATIC_BANK.forEach(s => {
+    if(!matchesItem(s, filters, "static")) return;
+    pool.push({ kind: "static", soal: s, src: s, contrast: isContrastSrc(s) });
+  });
+  return pool;
+}
+function instantiateFromPool(item){
+  if(item.kind === "static") return instantiateStatic(item.soal);
+  return instantiate(item.tpl);
+}
+function availableDistancesForPrinciple(principle){
+  const set = new Set();
+  sessionPool(principle).forEach(item => {
+    /* v0.7.1: kontras tidak ikut mendefinisikan tangga jarak */
+    if(item.contrast) return;
+    set.add(item.src.surface_distance ?? 0);
+  });
+  /* kalau hanya ada kontras, fallback ke semua */
+  if(!set.size){
+    sessionPool(principle).forEach(item => set.add(item.src.surface_distance ?? 0));
+  }
+  return [...set].sort((a, b) => a - b);
+}
+function pickSessionSoal(){
+  const { principle, targetDistance } = state.session;
+  const pool = sessionPool(principle);
+  if(!pool.length) return null;
+
+  const targets   = pool.filter(it => !it.contrast);
+  const contrasts = pool.filter(it =>  it.contrast);
+
+  /* 20% — kontras */
+  if(Math.random() < 0.20){
+    if(contrasts.length) return instantiateFromPool(pickRandom(contrasts));
+    /* kalau tidak ada kontras, refresh ke jarak lebih rendah */
+    const lower = targets.filter(it => (it.src.surface_distance ?? 0) < targetDistance);
+    if(lower.length) return instantiateFromPool(pickRandom(lower));
+    /* kalau tidak ada yang lebih rendah, ambil apa saja */
+    if(targets.length) return instantiateFromPool(pickRandom(targets));
+    return instantiateFromPool(pickRandom(pool));
+  }
+
+  /* 80% — dari target distance, hanya non-kontras */
+  const atTarget = targets.filter(it => (it.src.surface_distance ?? 0) === targetDistance);
+  if(atTarget.length) return instantiateFromPool(pickRandom(atTarget));
+
+  /* fallback: jarak terdekat */
+  let best = null;
+  targets.forEach(it => {
+    const d = it.src.surface_distance ?? 0;
+    const diff = Math.abs(d - targetDistance);
+    if(!best || diff < best.diff) best = { item: it, diff };
+  });
+  if(best) return instantiateFromPool(best.item);
+  return pool.length ? instantiateFromPool(pickRandom(pool)) : null;
+}
+function startSession(){
+  if(state.principle === "all") return;
+  const distances = availableDistancesForPrinciple(state.principle);
+  if(!distances.length) return;
+  state.session = {
+    active: true,
+    principle: state.principle,
+    targetDistance: distances[0],
+    results: [],
+    startedAt: Date.now()
+  };
+  state.lastKey = null;
+  drawSession();
+  updateLockState();
+  nextSoal();
+}
+function endSession(){
+  state.session = {
+    active: false, principle: null,
+    targetDistance: 0, results: [], startedAt: 0
+  };
+  drawSession();
+  updateLockState();
+}
+function recordSessionResult(correct, confident, ms){
+  const s = state.session;
+  if(!s.active) return;
+
+  s.results.push({ correct, confident, ms, distance: state.soal.surface_distance });
+  if(s.results.length > 8) s.results.shift();
+
+  /* v0.7.1: evaluasi hanya saat jendela penuh, dan pakai rasio langsung.
+     Ambang efektif dengan window 8: naik ≥ 6/8 (75%), turun ≤ 2/8 (25%).
+     Dengan window 6: naik ≥ 5/6 (83%), turun ≤ 2/6 (33%).
+     Dokumen (changelog) mencerminkan perilaku ini. */
+  if(s.results.length >= 8){
+    const correctCount = s.results.filter(r => r.correct).length;
+    const ratio = correctCount / s.results.length;
+    const distances = availableDistancesForPrinciple(s.principle);
+
+    if(ratio >= 0.75){
+      const next = distances.find(d => d > s.targetDistance);
+      if(next !== undefined){
+        s.targetDistance = next;
+        s.results = [];
+      }
+    } else if(ratio <= 0.35){
+      const prev = [...distances].reverse().find(d => d < s.targetDistance);
+      if(prev !== undefined){
+        s.targetDistance = prev;
+        s.results = [];
+      }
+    }
+  }
+}
+function drawSession(){
+  const el = els.sessionPanel;
+  el.innerHTML = "";
+
+  if(!state.session.active){
+    if(state.principle === "all"){
+      const p = document.createElement("p");
+      p.className = "session-status";
+      p.textContent = "Pilih prinsip dulu untuk memulai sesi adaptif.";
+      el.appendChild(p);
+      return;
+    }
+    const btn = document.createElement("button");
+    btn.className = "btn-sm primary";
+    btn.textContent = "Mulai: " + state.principle;
+    btn.addEventListener("click", startSession);
+    el.appendChild(btn);
+    const hint = document.createElement("p");
+    hint.className = "session-status";
+    hint.textContent = "Sesi menyesuaikan jarak setelah 8 soal, dengan ambang 75% naik / 35% turun (efektif 75%/25% pada jendela penuh).";
+    el.appendChild(hint);
+    return;
+  }
+
+  const s = state.session;
+  const total = s.results.length;
+  const correct = s.results.filter(r => r.correct).length;
+  const acc = total ? Math.round((correct / total) * 100) : null;
+
+  const ledger = document.createElement("dl");
+  ledger.className = "session-ledger";
+
+  const row = (k, v, cls) => {
+    const div = document.createElement("div");
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    if(cls) dd.className = cls;
+    div.appendChild(dt); div.appendChild(dd);
+    ledger.appendChild(div);
+  };
+
+  row("Prinsip", s.principle);
+  row("Jarak", String(s.targetDistance));
+  row("Jendela", total + "/8");
+  if(acc === null) row("Akurasi", "—");
+  else row("Akurasi", acc + "%", acc >= 75 ? "acc-ok" : (acc <= 35 ? "acc-no" : ""));
+
+  el.appendChild(ledger);
+
+  const confident = s.results.filter(r => r.confident);
+  const unsure    = s.results.filter(r => !r.confident);
+  const cOk = confident.filter(r => r.correct).length;
+  const uOk = unsure.filter(r => r.correct).length;
+
+  const head = document.createElement("div");
+  head.className = "session-ledger";
+  const h = document.createElement("div");
+  h.className = "sub-head";
+  h.textContent = "Kalibrasi";
+  head.appendChild(h);
+  el.appendChild(head);
+
+  const calib = document.createElement("div");
+  calib.className = "calib-list";
+  const cRow = document.createElement("div");
+  cRow.className = "calib-row";
+  cRow.innerHTML = '<span>Yakin</span><span class="acc">' +
+    (confident.length ? cOk + "/" + confident.length + " · " +
+      Math.round((cOk/confident.length)*100) + "%" : "—") + '</span>';
+  calib.appendChild(cRow);
+  const uRow = document.createElement("div");
+  uRow.className = "calib-row";
+  uRow.innerHTML = '<span>Tidak yakin</span><span class="acc">' +
+    (unsure.length ? uOk + "/" + unsure.length + " · " +
+      Math.round((uOk/unsure.length)*100) + "%" : "—") + '</span>';
+  calib.appendChild(uRow);
+  el.appendChild(calib);
+
+  if(confident.length >= 3 && unsure.length >= 3){
+    const cAcc = cOk / confident.length;
+    const uAcc = uOk / unsure.length;
+    const gap = Math.round((cAcc - uAcc) * 100);
+    const gapEl = document.createElement("div");
+    gapEl.className = "calib-gap" + (gap >= 20 ? " good" : (gap < 5 ? " bad" : ""));
+    gapEl.textContent = gap >= 20
+      ? "Kalibrasi baik — kamu bisa membedakan kapan tahu dan kapan menebak."
+      : (gap < 5
+        ? "Kalibrasi lemah — keyakinanmu belum membedakan benar dan salah."
+        : "Kalibrasi sedang.");
+    el.appendChild(gapEl);
+  }
+
+  const endBtn = document.createElement("button");
+  endBtn.className = "btn-sm";
+  endBtn.textContent = "Akhiri sesi";
+  endBtn.addEventListener("click", endSession);
+  el.appendChild(endBtn);
+}
+function updateLockState(){
+  const sessionLocked = state.session.active;
+  ["sec-diff", "sec-src", "sec-principle"].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle("locked", sessionLocked);
+  });
+  els.tabs.classList.toggle("locked", sessionLocked);
+
+  /* v0.7.1: kunci "Soal baru" saat sesi aktif atau saat menunggu keyakinan */
+  const nextLocked = sessionLocked || state.awaitingConfidence;
+  els.next.disabled = nextLocked;
+}
+
+/* ============================================================
+   7. Grade
+   ============================================================ */
+function grade(soal, ua){
+  const inp = soal.input;
+  if(inp.kind === "choice"){
+    if(typeof ua !== "number") return false;
+    return inp.options[ua] && inp.options[ua].correct === true;
+  }
+  if(inp.kind === "keypad" || inp.kind === "palette"){
+    return normEq(ua, inp.canonical);
+  }
+  if(inp.kind === "fill"){
+    if(!Array.isArray(ua) || ua.length !== inp.slots.length) return false;
+    return inp.slots.every((s,i) => normEq(ua[i], s.answer));
+  }
+  return false;
+}
+
+/* ============================================================
+   8. State
+   ============================================================ */
+const state = {
+  mode: "all", diff: 0, srcFilter: "all", principle: "all",
+  soal: null, soalStartedAt: 0,
+  answered: false, awaitingConfidence: false,
+  userAnswer: null, buffer: "",
+  pending: null,
+  lastKey: null,
+  stats: { ok:0, no:0, streak:0, best:0, byPrinciple: {} },
+  session: { active: false, principle: null, targetDistance: 0, results: [], startedAt: 0 },
+  validation: { validCount: 0, invalid: [], validIds: new Set() },
+  srcTab: "soal"
+};
+
+const $ = id => document.getElementById(id);
+const els = {
+  prompt: $("prompt"), inputs: $("inputs"), explain: $("explain"),
+  confSlot: $("conf-slot"),
+  mId: $("m-id"), mTpl: $("m-tpl"), mDom: $("m-dom"), mDif: $("m-dif"),
+  mKind: $("m-kind"), mPrinciple: $("m-principle"), mDist: $("m-dist"),
+  mSrc: $("m-src"), mSession: $("m-session"),
+  code: $("code"), redactNote: $("redact-note"),
+  sOk: $("s-ok"), sNo: $("s-no"), sAcc: $("s-acc"), sSt: $("s-st"), sBest: $("s-best"),
+  calibTotal: $("calib-total"),
+  principleList: $("principle-list"),
+  sessionPanel: $("session-panel"),
+  bankStatus: $("bank-status"),
+  tabs: $("tabs"), next: $("next")
+};
+
+/* ============================================================
+   9. Draw
+   ============================================================ */
+function pickNext(){
+  if(state.session.active) return pickSessionSoal();
+  return pickSoal({
+    mode: state.mode, diff: state.diff,
+    srcFilter: state.srcFilter, principle: state.principle
+  });
+}
+function nextSoal(){
+  /* v0.7.1: jangan buang jawaban yang belum dikonfirmasi */
+  if(state.awaitingConfidence) return;
+
+  let soal = null;
+
+  /* v0.7.2: di dalam sesi, prioritas adalah keputusan pickSessionSoal() (80/20).
+     Retry anti-repeat DIMATIKAN saat sesi aktif — kalau tidak, di jarak 0/1
+     (hanya satu target) retry hampir selalu memaksa keluar ke kontras,
+     menghasilkan 50/50, bukan 80/20. Di luar sesi, anti-repeat tetap jalan. */
+  if(state.session.active){
+    soal = pickNext();
+    if(!soal) soal = pickSoal({
+      mode: state.mode, diff: state.diff,
+      srcFilter: state.srcFilter, principle: state.principle
+    });
+  } else {
+    let fallback = null;
+    for(let i = 0; i < 30; i++){
+      const s = pickNext();
+      if(!s) break;
+      if(!fallback) fallback = s;
+      const key = s.template_id || s.id;
+      if(key !== state.lastKey){ soal = s; break; }
+    }
+    if(!soal) soal = fallback;
+  }
+
+  if(!soal){
+    els.prompt.textContent = "Tidak ada soal untuk kombinasi filter ini.";
+    els.inputs.innerHTML = "";
+    els.confSlot.innerHTML = "";
+    els.explain.hidden = true;
+    state.soal = null;
+    els.mId.textContent = "—"; els.mTpl.textContent = "—";
+    els.mDom.textContent = "—"; els.mDif.textContent = "—";
+    els.mKind.textContent = "—"; els.mPrinciple.textContent = "—";
+    els.mDist.textContent = "—"; els.mSession.textContent = "";
+    return;
+  }
+  state.lastKey = soal.template_id || soal.id;
+  state.soal = soal;
+  state.soalStartedAt = Date.now();
+  state.answered = false;
+  state.awaitingConfidence = false;
+  state.userAnswer = null;
+  state.buffer = "";
+  state.pending = null;
+  draw();
+  updateLockState();
+}
+function draw(){
+  const s = state.soal;
+  if(!s) return;
+  els.mId.textContent = "#" + s.id;
+  els.mTpl.textContent = s.template_id || "(statis)";
+  els.mDom.textContent = s.domain;
+  els.mDif.textContent = "tingkat " + s.difficulty;
+  els.mKind.textContent = "input:" + s.input.kind;
+  els.mPrinciple.textContent = s.principle || "—";
+  els.mDist.textContent = "jarak " + (s.surface_distance ?? "—");
+  els.mSrc.textContent = s.source;
+  els.mSrc.className = "src-tag " + s.source;
+
+  if(state.session.active){
+    els.mSession.innerHTML = '<span class="session-tag">sesi</span>';
+  } else {
+    els.mSession.textContent = "";
+  }
+
+  els.prompt.textContent = s.prompt;
+  els.inputs.innerHTML = "";
+  els.confSlot.innerHTML = "";
+  els.explain.hidden = true;
+  els.explain.innerHTML = "";
+
+  mountInput(s.input);
+  drawCode();
+}
+function mountInput(inp){
+  if(inp.kind === "choice")  mountChoice(inp);
+  if(inp.kind === "keypad")  mountKeypad(inp, false);
+  if(inp.kind === "palette") mountKeypad(inp, true);
+  if(inp.kind === "fill")    mountFill(inp);
+}
+
+function mountChoice(inp){
+  const box = document.createElement("div");
+  box.className = "opts";
+  inp.options.forEach((o, i) => {
+    const b = document.createElement("button");
+    b.className = "opt";
+    b.innerHTML = '<span class="key">' + "ABCDEFGH"[i] + '</span>' +
+                  '<span class="txt"></span><span class="mk"></span>';
+    b.querySelector(".txt").textContent = o.text;
+    b.addEventListener("click", () => {
+      if(state.answered) return;
+      state.userAnswer = i;
+      [...box.children].forEach((el, j) => el.classList.toggle("chosen", j === i));
+      submit();
+    });
+    box.appendChild(b);
+  });
+  els.inputs.appendChild(box);
+}
+
+function mountKeypad(inp, isPalette){
+  /* v0.7.1: default keys/layout kalau tidak ada (untuk soal statis lama) */
+  const keys = inp.keys || ["1","2","3","4","5","6","7","8","9","⌫","0","⏎"];
+  const layout = (inp.layout && inp.layout.length) ? inp.layout : [3,3,3];
+
+  const wrap = document.createElement("div");
+  wrap.className = "kp-wrap" + (isPalette ? " pal" : "");
+
+  const disp = document.createElement("div");
+  disp.className = "kp-display";
+  disp.innerHTML = '<span class="ph">' +
+    (isPalette ? "Pilih simbol" : "Ketik angka") +
+    '</span><span class="kp-buf"></span><span class="cursor"></span>';
+  wrap.appendChild(disp);
+
+  const grid = document.createElement("div");
+  grid.className = "kp-keys";
+  const cols = Math.max(...layout);
+  grid.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0,1fr))";
+
+  keys.forEach(k => {
+    const b = document.createElement("button");
+    b.className = "kp-key" + (isPalette ? " pal-key" : "");
+    b.textContent = k;
+    if(k === "⌫" || k === "⏎") b.classList.add("action");
+    b.addEventListener("click", () => {
+      if(state.answered) return;
+      if(k === "⌫"){ state.buffer = state.buffer.slice(0, -1); }
+      else if(k === "⏎"){ state.userAnswer = state.buffer; submit(); return; }
+      else if(state.buffer.length < (inp.maxLength || 6)){ state.buffer += k; }
+      refreshBuffer();
+    });
+    grid.appendChild(b);
+  });
+  wrap.appendChild(grid);
+  els.inputs.appendChild(wrap);
+  refreshBuffer();
+}
+
+function mountFill(inp){
+  /* v0.7.1: iterasi berdasarkan slots, bukan parts.
+     parts boleh lebih pendek dari slots+1; yang kosong tidak dirender. */
+  const wrap = document.createElement("div");
+  wrap.className = "fill-wrap";
+
+  const line = document.createElement("div");
+  line.className = "fill-line";
+  const fields = [];
+  let activeSlot = 0;
+  const hasKeys = !!(inp.keys && inp.keys.length);
+
+  for(let i = 0; i < inp.slots.length; i++){
+    const prefix = inp.parts[i];
+    if(prefix){
+      const span = document.createElement("span");
+      span.textContent = prefix;
+      line.appendChild(span);
+    }
+    const f = document.createElement("input");
+    f.className = "fill-slot";
+    f.style.width = (inp.slots[i].width || 12) * 10 + "px";
+    f.autocomplete = "off";
+    f.spellcheck = false;
+    f.dataset.idx = i;
+    if(hasKeys) f.readOnly = true;
+    f.addEventListener("focus", () => { activeSlot = i; updateActive(); });
+    f.addEventListener("click", () => { activeSlot = i; updateActive(); });
+    f.addEventListener("keydown", e => {
+      if(e.key === "Enter"){ e.preventDefault(); trySubmit(); }
+    });
+    line.appendChild(f);
+    fields.push(f);
+  }
+  /* teks penutup, kalau ada */
+  const suffix = inp.parts[inp.slots.length];
+  if(suffix){
+    const span = document.createElement("span");
+    span.textContent = suffix;
+    line.appendChild(span);
+  }
+  wrap.appendChild(line);
+
+  if(hasKeys){
+    const kp = document.createElement("div");
+    kp.className = "fill-keys";
+    const cols = Math.max(...(inp.layout || [inp.keys.length]));
+    kp.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0,1fr))";
+
+    inp.keys.forEach(k => {
+      const b = document.createElement("button");
+      b.className = "fill-key";
+      b.textContent = k;
+      b.addEventListener("click", () => {
+        if(state.answered) return;
+        fields[activeSlot].value = k;
+        const nextEmpty = fields.findIndex((f, idx) => idx > activeSlot && !f.value);
+        if(nextEmpty >= 0) activeSlot = nextEmpty;
+        else if(activeSlot < fields.length - 1) activeSlot++;
+        updateActive();
+      });
+      kp.appendChild(b);
+    });
+    wrap.appendChild(kp);
+
+    const actions = document.createElement("div");
+    actions.className = "fill-actions";
+
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "fill-action";
+    clearBtn.textContent = "Hapus";
+    clearBtn.addEventListener("click", () => {
+      if(state.answered) return;
+      fields[activeSlot].value = "";
+      updateActive();
+    });
+    actions.appendChild(clearBtn);
+
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "fill-action primary";
+    submitBtn.textContent = "Periksa";
+    submitBtn.addEventListener("click", trySubmit);
+    actions.appendChild(submitBtn);
+
+    wrap.appendChild(actions);
+    wrap._btn = submitBtn;
+  } else {
+    const submitBox = document.createElement("div");
+    submitBox.className = "fill-submit";
+    const btn = document.createElement("button");
+    btn.textContent = "Periksa";
+    btn.addEventListener("click", trySubmit);
+    submitBox.appendChild(btn);
+    wrap.appendChild(submitBox);
+    wrap._btn = btn;
+    setTimeout(() => fields[0] && fields[0].focus(), 40);
+  }
+
+  function updateActive(){
+    fields.forEach((f, i) => f.classList.toggle("active", i === activeSlot));
+  }
+  updateActive();
+
+  function trySubmit(){
+    if(state.answered) return;
+    if(fields.some(f => !f.value.trim())) return;
+    state.userAnswer = fields.map(f => f.value);
+    submit();
+  }
+
+  wrap._fields = fields;
+  els.inputs.appendChild(wrap);
+}
+
+/* ============================================================
+   10. Submit → confidence → commit
+   ============================================================ */
+function submit(){
+  if(state.answered || !state.soal) return;
+  state.answered = true;
+  state.awaitingConfidence = true;
+
+  const s = state.soal;
+  const correct = grade(s, state.userAnswer);
+  const ms = Date.now() - state.soalStartedAt;
+  state.pending = { correct, ms };
+
+  disableInput();
+  mountConfidenceBar();
+  updateLockState();
+  drawCode();          /* redaksi dilepas setelah soal dijawab */
+}
+
+function disableInput(){
+  const inp = state.soal.input;
+  if(inp.kind === "choice"){
+    const box = els.inputs.querySelector(".opts");
+    if(box) [...box.children].forEach(el => el.disabled = true);
+  } else if(inp.kind === "keypad" || inp.kind === "palette"){
+    const wrap = els.inputs.querySelector(".kp-wrap");
+    if(wrap){
+      wrap.querySelectorAll("button").forEach(b => b.disabled = true);
+      const cur = wrap.querySelector(".cursor");
+      if(cur) cur.classList.add("hide");
+    }
+  } else if(inp.kind === "fill"){
+    const wrap = els.inputs.querySelector(".fill-wrap");
+    if(wrap){
+      wrap._fields.forEach(f => { f.disabled = true; f.classList.remove("active"); });
+      wrap.querySelectorAll("button").forEach(b => b.disabled = true);
+    }
+  }
+}
+
+function mountConfidenceBar(){
+  const el = els.confSlot;
+  el.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "conf-bar";
+  const q = document.createElement("span");
+  q.className = "q";
+  q.textContent = "Seberapa yakin dengan jawabanmu?";
+  const btns = document.createElement("div");
+  btns.className = "conf-btns";
+
+  const bY = document.createElement("button");
+  bY.className = "conf-btn yakin";
+  bY.textContent = "Yakin (Y)";
+  bY.addEventListener("click", () => commit(true));
+
+  const bN = document.createElement("button");
+  bN.className = "conf-btn tidak";
+  bN.textContent = "Tidak yakin (T)";
+  bN.addEventListener("click", () => commit(false));
+
+  btns.appendChild(bY); btns.appendChild(bN);
+  bar.appendChild(q); bar.appendChild(btns);
+  el.appendChild(bar);
+
+  const hint = document.createElement("div");
+  hint.className = "conf-hint";
+  hint.textContent = "Jawaban akan dinilai setelah keyakinan dipilih.";
+  el.appendChild(hint);
+}
+
+function commit(confident){
+  if(!state.pending) return;
+  state.awaitingConfidence = false;
+  const { correct, ms } = state.pending;
+  const s = state.soal;
+
+  if(correct){
+    state.stats.ok++;
+    state.stats.streak++;
+    if(state.stats.streak > state.stats.best) state.stats.best = state.stats.streak;
+  } else {
+    state.stats.no++;
+    state.stats.streak = 0;
+  }
+
+  const p  = s.principle || "unknown";
+  const sd = s.surface_domain || "unknown";
+  if(!state.stats.byPrinciple[p]){
+    state.stats.byPrinciple[p] = {
+      ok:0, no:0, bySurface:{},
+      confident:{ ok:0, no:0 }, unsure:{ ok:0, no:0 }
+    };
+  }
+  const ps = state.stats.byPrinciple[p];
+  if(!ps.bySurface[sd]) ps.bySurface[sd] = { ok:0, no:0 };
+  if(correct){ ps.ok++; ps.bySurface[sd].ok++; }
+  else       { ps.no++; ps.bySurface[sd].no++; }
+  const bucket = confident ? ps.confident : ps.unsure;
+  if(correct) bucket.ok++; else bucket.no++;
+
+  if(state.session.active){
+    recordSessionResult(correct, confident, ms);
+  }
+
+  drawStats();
+  drawPrincipleList();
+  drawSession();
+  drawCode();   /* v0.7.2-fix: segarkan panel kanan agar redaksi dilepas setelah commit */
+
+  els.confSlot.innerHTML = "";
+  reveal(s, correct);
+  renderExplain(s, correct, confident, ms);
+
+  state.pending = null;
+  updateLockState();
+}
+
+function reveal(s, correct){
+  const inp = s.input;
+
+  if(inp.kind === "choice"){
+    const box = els.inputs.querySelector(".opts");
+    [...box.children].forEach((el, i) => {
+      el.disabled = true;
+      el.classList.remove("chosen");
+      const mk = el.querySelector(".mk");
+      const o = inp.options[i];
+      if(o.correct){
+        el.classList.add("correct");
+        mk.textContent = correct ? "benar" : "jawaban";
+      } else if(i === state.userAnswer){
+        el.classList.add("wrong");
+        mk.textContent = "salah";
+      } else {
+        el.classList.add("faded");
+      }
+    });
+    return;
+  }
+
+  if(inp.kind === "keypad" || inp.kind === "palette"){
+    const wrap = els.inputs.querySelector(".kp-wrap");
+    if(!wrap) return;
+    const disp = wrap.querySelector(".kp-display");
+    const cur = disp.querySelector(".cursor");
+    if(cur) cur.classList.add("hide");
+    if(correct){
+      disp.style.borderColor = "var(--ok)";
+      disp.style.background = "var(--ok-bg)";
+    } else {
+      disp.style.borderColor = "var(--no)";
+      disp.style.background = "var(--no-bg)";
+    }
+    disp.querySelector(".kp-buf").textContent = state.userAnswer || "—";
+    wrap.querySelectorAll("button").forEach(b => b.disabled = true);
+    return;
+  }
+
+  if(inp.kind === "fill"){
+    const wrap = els.inputs.querySelector(".fill-wrap");
+    if(!wrap) return;
+    wrap._fields.forEach((f, i) => {
+      f.disabled = true;
+      f.classList.remove("active");
+      f.classList.add(normEq(f.value, inp.slots[i].answer) ? "ok" : "no");
+    });
+    wrap.querySelectorAll("button").forEach(b => b.disabled = true);
+  }
+}
+
+function renderExplain(s, correct, confident, ms){
+  const inp = s.input;
+  let html = '<span class="lbl">Pembahasan</span>' +
+    '<p class="verdict ' + (correct ? "ok" : "no") + '">' +
+    (correct ? "Tepat." : "Belum tepat.") + '</p>';
+
+  if(inp.kind === "choice"){
+    const idx = inp.options.findIndex(o => o.correct);
+    html += '<p class="row"><span class="tag">Jawaban</span>' +
+      escapeHtml(inp.options[idx].text) + '</p>';
+  } else if(inp.kind === "keypad" || inp.kind === "palette"){
+    html += '<p class="row"><span class="tag">Jawaban</span>' +
+      escapeHtml(inp.canonical) + '</p>';
+    if(!correct){
+      html += '<p class="row"><span class="tag">Jawabanmu</span>' +
+        escapeHtml(state.userAnswer || "—") + '</p>';
+    }
+  } else if(inp.kind === "fill"){
+    let sentence = "";
+    for(let i = 0; i < inp.slots.length; i++){
+      const prefix = inp.parts[i] || "";
+      sentence += escapeHtml(prefix) +
+        '<span style="border-bottom:1px solid var(--ink);padding:0 4px">' +
+        escapeHtml(inp.slots[i].answer) + '</span>';
+    }
+    const suffix = inp.parts[inp.slots.length] || "";
+    sentence += escapeHtml(suffix);
+    html += '<p class="row"><span class="tag">Jawaban</span>' + sentence + '</p>';
+  }
+
+  html += '<p class="row" style="margin-top:12px">' + escapeHtml(s.explanation) + '</p>';
+
+  /* v0.7.1: precedence bug diperbaiki — setiap baris disusun terpisah */
+  const confLabel = confident ? "yakin" : "tidak yakin";
+  const confClass = confident ? "ok" : "no";
+  html += '<div class="meta-line">';
+  html +=   '<span class="' + confClass + '">Keyakinan: ' + confLabel + '</span>';
+  html +=   '<span>Waktu: ' + fmtSec(ms) + '</span>';
+  html +=   '<span>Jarak: ' + (s.surface_distance ?? "—") + '</span>';
+  html += '</div>';
+
+  if(inp.kind === "choice" && inp.options.some(o => o.why)){
+    html += '<div class="whys">';
+    inp.options.forEach((o, i) => {
+      if(!o.why) return;
+      const cls = o.correct ? "correct" : (i === state.userAnswer ? "wrong" : "");
+      html += '<div class="why ' + cls + '">' +
+        '<span class="k">' + "ABCDEFGH"[i] + '</span>' +
+        '<div><div>' + escapeHtml(o.text) + '</div>' +
+        '<div style="color:var(--muted);font-size:12px;margin-top:2px">' +
+        escapeHtml(o.why) + '</div></div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  els.explain.innerHTML = html;
+  els.explain.hidden = false;
+}
+
+function drawStats(){
+  const { ok, no, streak, best } = state.stats;
+  const total = ok + no;
+  els.sOk.textContent = ok;
+  els.sNo.textContent = no;
+  els.sAcc.textContent = total ? Math.round((ok / total) * 100) + "%" : "—";
+  els.sSt.textContent = String(streak).padStart(2, "0");
+  els.sBest.textContent = String(best).padStart(2, "0");
+
+  let cOk = 0, cTotal = 0, uOk = 0, uTotal = 0;
+  Object.values(state.stats.byPrinciple).forEach(ps => {
+    if(ps.confident){ cOk += ps.confident.ok; cTotal += ps.confident.ok + ps.confident.no; }
+    if(ps.unsure)   { uOk += ps.unsure.ok;   uTotal += ps.unsure.ok + ps.unsure.no; }
+  });
+
+  const el = els.calibTotal;
+  el.innerHTML = "";
+  const row = (label, ok, total) => {
+    const r = document.createElement("div");
+    r.className = "calib-row";
+    const acc = total ? Math.round((ok/total)*100) + "%" : "—";
+    r.innerHTML = '<span>' + label + '</span><span class="acc">' +
+      (total ? ok + "/" + total + " · " + acc : "—") + '</span>';
+    el.appendChild(r);
+  };
+  row("Yakin", cOk, cTotal);
+  row("Tidak yakin", uOk, uTotal);
+
+  if(cTotal >= 3 && uTotal >= 3){
+    const gap = Math.round(((cOk/cTotal) - (uOk/uTotal)) * 100);
+    const g = document.createElement("div");
+    g.className = "calib-gap" + (gap >= 20 ? " good" : (gap < 5 ? " bad" : ""));
+    g.textContent = "Beda: " + (gap >= 0 ? "+" : "") + gap + "%";
+    el.appendChild(g);
+  }
+}
+
+function fmt(n, d){
+  if(d === 0) return "—";
+  const pct = Math.round((n / d) * 100);
+  return n + "/" + d + " · " + pct + "%";
+}
+function drawPrincipleList(){
+  const avail = availablePrinciples({
+    mode: state.mode, diff: state.diff,
+    srcFilter: state.srcFilter, principle: "all"
+  });
+  if(state.principle !== "all" && !avail.includes(state.principle)){
+    state.principle = "all";
+  }
+
+  const el = els.principleList;
+  el.innerHTML = "";
+
+  const allRow = document.createElement("button");
+  allRow.className = "p-row" + (state.principle === "all" ? " on" : "");
+  const allStat = totalForPrinciples(avail);
+  allRow.innerHTML =
+    '<span class="name">Semua</span>' +
+    '<span class="acc">' + (allStat.d ? fmt(allStat.n, allStat.d) : "—") + '</span>';
+  allRow.addEventListener("click", () => {
+    if(state.principle === "all") return;
+    if(state.session.active) return;
+    state.principle = "all";
+    drawPrincipleList();
+    drawSession();
+    nextSoal();
+  });
+  el.appendChild(allRow);
+
+  avail.forEach(p => {
+    const st = state.stats.byPrinciple[p];
+    const total = st ? st.ok + st.no : 0;
+    const row = document.createElement("button");
+    row.className = "p-row" + (state.principle === p ? " on" : "") + (total === 0 ? " empty" : "");
+    const accText = total > 0 ? fmt(st.ok, total) : "—";
+    row.innerHTML =
+      '<span class="name">' + escapeHtml(p) + '</span>' +
+      '<span class="acc">' + accText + '</span>';
+    row.addEventListener("click", () => {
+      if(state.session.active) return;
+      state.principle = (state.principle === p) ? "all" : p;
+      drawPrincipleList();
+      drawSession();
+      nextSoal();
+    });
+    el.appendChild(row);
+
+    if(state.principle === p && st && Object.keys(st.bySurface).length > 0){
+      const subs = document.createElement("div");
+      subs.className = "p-subs";
+      Object.keys(st.bySurface).sort().forEach(sd => {
+        const s = st.bySurface[sd];
+        const d = s.ok + s.no;
+        const sub = document.createElement("div");
+        sub.className = "p-sub";
+        sub.innerHTML =
+          '<span>' + escapeHtml(sd) + '</span>' +
+          '<span class="acc">' + (d ? fmt(s.ok, d) : "—") + '</span>';
+        subs.appendChild(sub);
+      });
+      el.appendChild(subs);
+    }
+  });
+}
+function totalForPrinciples(principles){
+  let n = 0, d = 0;
+  principles.forEach(p => {
+    const st = state.stats.byPrinciple[p];
+    if(!st) return;
+    n += st.ok; d += st.ok + st.no;
+  });
+  return { n, d };
+}
+
+function drawBankStatus(){
+  const el = els.bankStatus;
+  el.innerHTML = "";
+  const { validCount, invalid } = state.validation;
+
+  if(invalid.length === 0){
+    const ok = document.createElement("div");
+    ok.className = "val-ok";
+    ok.textContent = "Semua " + validCount + " entri valid.";
+    el.appendChild(ok);
+    return;
+  }
+
+  const warn = document.createElement("div");
+  warn.className = "val-warn";
+  warn.innerHTML = '<span class="head">' + invalid.length + " entri ditolak</span>";
+  invalid.forEach(item => {
+    const line = document.createElement("span");
+    line.className = "item";
+    line.textContent = item.id + " — " + item.errors.join("; ");
+    warn.appendChild(line);
+  });
+  el.appendChild(warn);
+
+  const ok = document.createElement("div");
+  ok.className = "val-ok";
+  ok.textContent = validCount + " entri valid.";
+  el.appendChild(ok);
+}
+
+function refreshBuffer(){
+  const disp = els.inputs.querySelector(".kp-display");
+  if(!disp || !state.soal) return;
+  disp.querySelector(".kp-buf").textContent = state.buffer;
+  const cur = disp.querySelector(".cursor");
+  const max = state.soal.input.maxLength || 6;
+  cur.classList.toggle("hide", state.buffer.length >= max);
+}
+
+/* ============================================================
+   11. Source panel (v0.7.1: redaksi)
+   ============================================================ */
+const REDACTED = '"…"';
+
+function redactSoal(soal){
+  /* Buat salinan soal dengan field sensitif diganti placeholder. */
+  const copy = JSON.parse(JSON.stringify(soal));
+
+  /* v0.7.2: field 'explanation' di level atas menyebut jawaban secara eksplisit
+     ("...maka 70 > 42." / "...semua merpati juga hewan."). Ikut diredaksi. */
+  if(copy.explanation !== undefined) copy.explanation = "…";
+
+  if(copy.input){
+    if(copy.input.kind === "choice" && Array.isArray(copy.input.options)){
+      copy.input.options = copy.input.options.map(o => ({
+        text: o.text,
+        correct: o.correct ? "…" : "…",
+        why: o.why ? "…" : null
+      }));
+    }
+    if(copy.input.kind === "keypad" || copy.input.kind === "palette"){
+      if(copy.input.canonical !== undefined) copy.input.canonical = "…";
+    }
+    if(copy.input.kind === "fill" && Array.isArray(copy.input.slots)){
+      copy.input.slots = copy.input.slots.map(s => ({
+        answer: "…",
+        width: s.width
+      }));
+    }
+  }
+  copy.__redacted = true;
+  return copy;
+}
+function redactTemplate(tpl){
+  const copy = JSON.parse(JSON.stringify(tpl));
+
+  /* v0.7.2: template memakai 'explain' (bukan 'explanation').
+     Keduanya menyebut jawaban dan harus diredaksi. */
+  if(copy.explain !== undefined)       copy.explain = "…";
+  if(copy.explanation !== undefined)   copy.explanation = "…";
+
+  if(copy.input){
+    if(copy.input.kind === "choice" && Array.isArray(copy.input.options)){
+      copy.input.options = copy.input.options.map(o => ({
+        text: o.text,
+        correct: o.correct ? "…" : "…",
+        why: o.why ? "…" : null
+      }));
+    }
+    if(copy.input.kind === "keypad" || copy.input.kind === "palette"){
+      if(copy.input.canonical !== undefined) copy.input.canonical = "…";
+    }
+    if(copy.input.kind === "fill" && Array.isArray(copy.input.slots)){
+      copy.input.slots = copy.input.slots.map(s => ({
+        answer: "…",
+        width: s.width
+      }));
+    }
+  }
+  return copy;
+}
+
+function highlight(obj){
+  const raw = escapeHtml(JSON.stringify(obj, null, 2));
+  return raw
+    .replace(/"([^"\n]+)":/g, '<span class="k">"$1"</span>:')
+    .replace(/: "([^"\n]*)"/g, ': <span class="s">"$1"</span>')
+    .replace(/: (\d+)/g, ': <span class="n">$1</span>')
+    .replace(/: (true|false)/g, ': <span class="b">$1</span>');
+}
+function drawCode(){
+  const s = state.soal;
+  if(!s){ els.code.textContent = ""; return; }
+
+  /* v0.7.2: redaksi HANYA dilepas setelah commit (keyakinan dipilih).
+     Sebelumnya memakai state.answered, yang sudah true di submit() —
+     sehingga panel kanan menampilkan correct/canonical tepat saat bar
+     keyakinan terbuka, dan kalibrasi bisa dipalsukan dengan melihat
+     panel sebelum memilih yakin/tidak yakin. */
+  const reveal = state.answered && !state.awaitingConfidence;
+
+  if(state.srcTab === "soal"){
+    const shown = reveal ? s : redactSoal(s);
+    els.code.innerHTML = highlight(shown);
+  } else {
+    if(s.source === "static"){
+      els.code.innerHTML = '<span class="k">// soal statis — tidak punya template</span>';
+      return;
+    }
+    const tpl = TEMPLATES.find(t => t.id === s.template_id);
+    if(!tpl){ els.code.textContent = ""; return; }
+    const shown = reveal ? tpl : redactTemplate(tpl);
+    els.code.innerHTML = highlight(shown);
+  }
+
+  els.redactNote.classList.toggle("hidden", reveal);
+}
+
+/* ============================================================
+   12. Events
+   ============================================================ */
+els.tabs.addEventListener("click", e => {
+  if(state.session.active) return;
+  const b = e.target.closest("button"); if(!b) return;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("on", x === b));
+  state.mode = b.dataset.mode;
+  state.lastKey = null;
+  drawPrincipleList();
+  drawSession();
+  nextSoal();
+});
+$("diff").addEventListener("click", e => {
+  if(state.session.active) return;
+  const b = e.target.closest("button"); if(!b) return;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("on", x === b));
+  state.diff = Number(b.dataset.d);
+  state.lastKey = null;
+  drawPrincipleList();
+  drawSession();
+  nextSoal();
+});
+$("src-filter").addEventListener("click", e => {
+  if(state.session.active) return;
+  const b = e.target.closest("button"); if(!b) return;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("on", x === b));
+  state.srcFilter = b.dataset.s;
+  state.lastKey = null;
+  drawPrincipleList();
+  drawSession();
+  nextSoal();
+});
+$("srctabs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("on", x === b));
+  state.srcTab = b.dataset.t;
+  drawCode();
+});
+els.next.addEventListener("click", () => {
+  if(state.awaitingConfidence) return;
+  nextSoal();
+});
+
+$("reset-stats").addEventListener("click", () => {
+  /* v0.7.1: reset juga diizinkan saat sesi aktif, dengan konfirmasi berbeda */
+  const msg = state.session.active
+    ? "Sesi aktif akan diakhiri, lalu semua statistik dihapus. Lanjutkan?"
+    : "Hapus semua statistik?";
+  if(!confirm(msg)) return;
+  state.stats = { ok:0, no:0, streak:0, best:0, byPrinciple: {} };
+  state.session = { active:false, principle:null, targetDistance:0, results:[], startedAt:0 };
+  drawStats();
+  drawPrincipleList();
+  drawSession();
+  updateLockState();
+});
+
+document.addEventListener("keydown", e => {
+  if(!state.soal) return;
+  const inField = e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA";
+
+  /* menunggu pilihan keyakinan — v0.7.1: hanya Y/T, tidak lagi 1/2 */
+  if(state.awaitingConfidence){
+    if(e.key === "y" || e.key === "Y"){ e.preventDefault(); commit(true); return; }
+    if(e.key === "t" || e.key === "T"){ e.preventDefault(); commit(false); return; }
+    return;
+  }
+
+  if(e.key === "Enter"){
+    if(state.answered){ e.preventDefault(); nextSoal(); return; }
+    if(!inField && (state.soal.input.kind === "keypad" || state.soal.input.kind === "palette")){
+      e.preventDefault();
+      state.userAnswer = state.buffer;
+      submit();
+      return;
+    }
+    return;
+  }
+  if(state.answered || inField) return;
+
+  const kind = state.soal.input.kind;
+
+  if(kind === "choice" && /^[1-9]$/.test(e.key)){
+    const i = Number(e.key) - 1;
+    if(state.soal.input.options[i]){
+      state.userAnswer = i;
+      const box = els.inputs.querySelector(".opts");
+      if(box) [...box.children].forEach((el, j) => el.classList.toggle("chosen", j === i));
+      submit();
+    }
+    return;
+  }
+
+  if(kind === "keypad" || kind === "palette"){
+    if(e.key === "Backspace"){
+      e.preventDefault();
+      state.buffer = state.buffer.slice(0, -1);
+      refreshBuffer();
+      return;
+    }
+    if(e.key === "Escape"){
+      state.buffer = "";
+      refreshBuffer();
+      return;
+    }
+    if(e.key.length === 1 && state.buffer.length < (state.soal.input.maxLength || 6)){
+      if(kind === "keypad"){
+        if(!/^\d$/.test(e.key)) return;
+        state.buffer += e.key;
+      } else {
+        const hit = state.soal.input.keys.find(k =>
+          k.length === 1 && k.toLowerCase() === e.key.toLowerCase()
+        );
+        if(!hit) return;
+        state.buffer += hit;
+      }
+      refreshBuffer();
+    }
+  }
+});
+
+/* ============================================================
+   13. Boot
+   ============================================================ */
+initDatasetUI();
+loadDataset().then(() => {
+  runValidation();
+  drawStats();
+  drawPrincipleList();
+  drawSession();
+  drawBankStatus();
+  drawDatasetPanel();
+  updateLockState();
+  nextSoal();
+});
+</script>
+</body>
+</html>
