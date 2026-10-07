@@ -33,11 +33,17 @@ def main() -> None:
 
     remaining = sorted(all_codes - already_handled)
 
+    # `read_stock_list` menolak daftar tanpa kolom delisted -- tidak ada
+    # gunanya menebak mana yang harus dibuang. Semua kode di sini sudah melewati
+    # filter itu (sumbernya sendiri yang menyisihkan yang delisted), jadi
+    # benderanya ditulis 0: nilai yang benar, sekaligus nilai yang bisa dibaca
+    # pemanggil `--stocks-file`. Tanpa kolom ini daftar gagal dibaca, dan run
+    # berhenti sebelum saham pertama pun dimulai.
     out_path = Path("db/list_saham_remaining.csv")
     with out_path.open("w", encoding="utf-8") as f:
-        f.write("ticker\n")
+        f.write("ticker,label_delisted\n")
         for code in remaining:
-            f.write(f"{code}\n")
+            f.write(f"{code},0\n")
 
     verified = {
         s for s, d in history.get("downloads", {}).items()
