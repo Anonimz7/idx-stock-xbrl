@@ -50,24 +50,37 @@ atas adalah koreksinya.
 
 ## 1. Keadaan saat dokumen ini ditulis
 
-### Run 785 — DIJEDA, jangan disentuh bridge sebelum selesai
+### Run 785 — masih berjalan; JANGAN sentuh bridge sebelum selesai
 
 | Item | Nilai |
 | --- | --- |
 | Perintah | `python -m firefox_bridge.instance.cli --stocks-file db\list_saham_remaining.csv --year 2025 --delay 2 --delay-max 5` |
 | Dijalankan dari | `productions\` |
-| PID pekerja | **9884** (CPU 9,8 dtk, 2 thread) |
+| PID pekerja | **9884** (±10 dtk CPU, 2 thread) |
 | PID pembungkus | 7692 (CPU 0,0 — diam saja, jangan diapa-apakan) |
 | Mulai | 14:41 WIB |
+| Status | **BERJALAN.** Pernah dijeda 16:04:35 → 16:31:12 WIB (26,6 mnt), sudah dilanjutkan |
 | Dijeda pada | 16:04:35 WIB, tepat setelah `PTSN` selesai dipindah + JSON ditulis |
-| Progres | **554 / 785 (70,6%)** — 514 sukses, 40 gagal `404 Not Found` |
-| Sisa | 231 (±35 menit) |
-| Laju | 9,1 dtk/saham |
-| Staging | 0 file (bersih) |
+| Laju sejati | **9,1 dtk/saham** — lihat peringatan soal jeda di §4 butir 13 |
+| Staging | `C:\Users\ORCA\Downloads\saham\staging` — 0 file saat bersih. **Bukan** `Downloads\instance\saham\staging` (folder itu tidak ada) |
 | Log | `C:\Users\ORCA\.local\share\opencode\shell\26cc3c667eb0b7ff2d59bec6f81d51cd5b73f44c\sh_1154ec48c001soBB1e5jeHxJsM.out` |
 
-Cara memastikan masih benar-benar berhenti: ukuran log dan CPU PID 9884
-harus tidak berubah dalam 10 detik.
+Progres berubah terus, jadi jangan menghafal angkanya — **ukur**:
+
+```powershell
+# keadaan proses + log
+$p = Get-Process -Id 9884; $i = Get-Item "<path log di tabel>"
+"{0} dtk, {1} byte, {2}" -f [math]::Round($p.CPU,1), $i.Length, $i.LastWriteTime
+```
+
+Cara memastikan benar-benar berhenti: **ukuran log dan CPU PID 9884 tidak
+berubah dalam 10 detik.** Pemeriksaan stempel waktu file tidak cukup sendiri.
+
+Pembuktian jeda yang tadi sah tidak berasal dari pemeriksaan staging (jalur
+staging yang saya periksa ternyata salah dan selalu "0", jadi tak efektif),
+melainkan dari tiga hal ini sekaligus: baris log `Downloaded instance PTSN`,
+file `PTSN_instance_T4_2025.zip` ada utuh 144.621 byte, dan `STEP JSON OK`
+sebelumnya. Ulangi dengan ketiganya.
 
 **Lanjutkan** (PowerShell, `NtResumeProcess`):
 
@@ -419,6 +432,20 @@ Semua ini pernah memakan waktu dalam sesi ini. Jangan diulangi.
 12. **`idx_watcher` harus punya `__init__.py`.** Tanpanya, mypy melihat
     `instance_catalog` dan `idx_watcher.instance_catalog` sebagai dua nama
     modul untuk file yang sama dan berhenti memeriksa apa pun.
+13. **Jeda buatan membuang perhitungan laju dan ETA.** Setelah run dijeda
+    26,6 menit, laju yang dihitung dari selisih stempel pertama–terakhir
+    melompat dari **9,1 → 11,9 dtk/saham** dan ETA meleset ±10 menit,
+    padahal laju kerjanya tidak berubah sama sekali. Kalau run pernah
+    dijeda, kurangi durasi jeda sebelum menghitung. Perintahnya:
+    ```python
+    PAUSE_START, PAUSE_END = sec('2026-10-07T09:04:35'), sec('2026-10-07T09:31:12')
+    kerja = total - (PAUSE_END - PAUSE_START)
+    laju  = kerja / jumlah_entri
+    ```
+14. **Lokasi staging adalah `C:\Users\ORCA\Downloads\saham\staging`.**
+    `C:\Users\ORCA\Downloads\instance\saham\staging` **tidak ada**. Memeriksa
+    jalur yang salah membuat pemeriksaan "0 file" selalu terpenuhi dan
+    menjadi tidak bermakna — persis yang terjadi saat memverifikasi jeda.
 
 ---
 

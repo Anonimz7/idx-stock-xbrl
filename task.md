@@ -1681,11 +1681,12 @@ dihentikan pada sesi sebelumnya, jadi harus dinyalakan lagi.
 ## 14. Lanjut Sesi Berikutnya
 
 > **Prioritas per 7 Oktober 2026 — baca dulu [`rencana-katalog.md`](rencana-katalog.md)**
-> sebelum melanjutkan apa pun. Di sana ada: keadaan run 785 yang **sedang
-> dijeda** di 554/785 (PID 9884, perintah resume dan perintah restart bila
-> proses sudah mati), temuan API `GetFinancialReport` beserta bukti bahwa API
-> itu tidak terbaca lewat bridge, rencana empat langkah menuju unduhan
-> berbasis katalog, dan daftar 12 jebakan yang sudah pernah memakan waktu.
+> sebelum melanjutkan apa pun. Di sana ada: keadaan run 785 yang **berjalan
+> menuju 785/785** (PID 9884; pernah dijeda lalu dilanjutkan, jadi perintah
+> jeda/resume dan perintah restart bila proses sudah mati semuanya tercatat
+> di sana), temuan API `GetFinancialReport` beserta bukti bahwa API itu tidak
+> terbaca lewat bridge, rencana empat langkah menuju unduhan berbasis katalog,
+> dan daftar 14 jebakan yang sudah pernah memakan waktu.
 >
 > Satu larangan yang penting: **langkah 2 rencana itu (endpoint `evaluate`)
 > mengubah ekstensi, dan ekstensi yang diubah wajib di-reload — yang akan
