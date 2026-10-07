@@ -56,41 +56,55 @@ atas adalah koreksinya.
 | --- | --- |
 | Perintah | `python -m firefox_bridge.instance.cli --stocks-file db\list_saham_remaining.csv --year 2025 --delay 2 --delay-max 5` |
 | Dijalankan dari | `productions\` |
-| PID pekerja | **9884** (±10 dtk CPU, 2 thread) |
-| PID pembungkus | 7692 (CPU 0,0 — diam saja, jangan diapa-apakan) |
-| Mulai | 14:41 WIB |
-| Status | **BERJALAN.** Pernah dijeda 16:04:35 → 16:31:12 WIB (26,6 mnt), sudah dilanjutkan |
-| Dijeda pada | 16:04:35 WIB, tepat setelah `PTSN` selesai dipindah + JSON ditulis |
+| Kode berjalan | **`98b9199`** — deteksi CAPTCHA + popup sudah terpasang |
+| Status | **BERJALAN (ulang).** PID asli 9884 **mati** waktu server di-restart ±17:47 WIB; diganti shell background pada 17:49 WIB |
+| Jeda | Dua kali: 16:04:35→16:31:12 (26,6 mnt) dan 17:05:29 sampai prosesnya mati |
+| Jeda terakhir | 17:05:29 WIB, tepat setelah `VISI` dipindah (posisi 748/785) |
 | Laju sejati | **9,1 dtk/saham** — lihat peringatan soal jeda di §4 butir 13 |
 | Staging | `C:\Users\ORCA\Downloads\saham\staging` — 0 file saat bersih. **Bukan** `Downloads\instance\saham\staging` (folder itu tidak ada) |
-| Log | `C:\Users\ORCA\.local\share\opencode\shell\26cc3c667eb0b7ff2d59bec6f81d51cd5b73f44c\sh_1154ec48c001soBB1e5jeHxJsM.out` |
+| Log run | `C:\Users\ORCA\.local\share\opencode\shell\26cc3c667eb0b7ff2d59bec6f81d51cd5b73f44c\sh_115fb32df001O8zTCCF0Nuxu9v.out` |
+| Log bridge | `…\sh_115f80a13001CryzVS9SOo6NMu.out` (port 8765) |
 
-Progres berubah terus, jadi jangan menghafal angkanya — **ukur**:
+**PID-nya tidak diketahui** karena sekarang berjalan sebagai shell background.
+Cari bila perlu menghentikan sementara:
 
 ```powershell
-# keadaan proses + log
-$p = Get-Process -Id 9884; $i = Get-Item "<path log di tabel>"
-"{0} dtk, {1} byte, {2}" -f [math]::Round($p.CPU,1), $i.Length, $i.LastWriteTime
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+  Where-Object { $_.CommandLine -like "*firefox_bridge.instance.cli*" } |
+  Select-Object ProcessId, CommandLine
 ```
 
-Cara memastikan benar-benar berhenti: **ukuran log dan CPU PID 9884 tidak
-berubah dalam 10 detik.** Pemeriksaan stempel waktu file tidak cukup sendiri.
+Progres berubah terus, jadi jangan menghafal angkanya — **ukur**, dari log:
 
-Pembuktian jeda yang tadi sah tidak berasal dari pemeriksaan staging (jalur
-staging yang saya periksa ternyata salah dan selalu "0", jadi tak efektif),
-melainkan dari tiga hal ini sekaligus: baris log `Downloaded instance PTSN`,
-file `PTSN_instance_T4_2025.zip` ada utuh 144.621 byte, dan `STEP JSON OK`
-sebelumnya. Ulangi dengan ketiganya.
+```powershell
+$i = Get-Item "<path Log run di tabel>"
+"{0} byte, {1}" -f $i.Length, $i.LastWriteTime
+```
 
-**Lanjutkan** (PowerShell, `NtResumeProcess`):
+Cara memastikan benar-benar berhenti: **ukuran log tidak berubah dalam 10
+detik.** Pemeriksaan stempel waktu file saja tidak cukup; CPU hanya bisa
+dicek bila PID-nya sudah diketahui.
+
+Pembuktian jeda tidak berasal dari pemeriksaan staging (jalur staging yang
+saya periksa pertama ternyata salah dan selalu "0", jadi tak efektif),
+melainkan dari tiga hal ini sekaligus: baris log `Downloaded instance <kode>`,
+file zip-nya ada utuh, dan `STEP JSON OK` sebelumnya. Ulangi dengan ketiganya.
+
+**Lanjutkan** — mekanismenya tetap `NtResumeProcess`, hanya PID-nya yang
+berubah (pakai hasil kueri di atas, `<PID>`):
 
 ```powershell
 Add-Type -Namespace Win32 -Name R -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);'
-[Win32.R]::NtResumeProcess((Get-Process -Id 9884).Handle)
+[Win32.R]::NtResumeProcess((Get-Process -Id <PID>).Handle)
 ```
 
-**Bila prosesnya sudah mati** (mis. komputer restart), jalankan ulang perintah
-di tabel — `download_history.json` menjamin tidak ada yang diunduh dua kali.
+**Bila prosesnya sudah mati**, jalankan ulang perintah di tabel —
+`download_history.json` menjamin tidak ada yang diunduh dua kali.
+
+Bridge boleh dihidupkan ulang **tanpa** memutus run: extension 0.1.8
+menyambung sendiri lagi, terbukti dari `STEP 0.5: extension 0.1.8 (siap)`
+setelah bridge restart. Yang tetap dilarang adalah **mengubah kode
+extension** — itu menuntut reload manual dan barulah sesi run putus.
 
 ### Sudah jadi
 
@@ -446,6 +460,15 @@ Semua ini pernah memakan waktu dalam sesi ini. Jangan diulangi.
     `C:\Users\ORCA\Downloads\instance\saham\staging` **tidak ada**. Memeriksa
     jalur yang salah membuat pemeriksaan "0 file" selalu terpenuhi dan
     menjadi tidak bermakna — persis yang terjadi saat memverifikasi jeda.
+15. **`text()` tidak pernah memuat `aria-label`.** Endpoint itu mengembalikan
+    `innerText`, sehingga elemen yang menamai dirinya lewat atribut — seperti
+    kotak Cloudflare `aria-label="Verify you are human"` — sama sekali tak
+    terbaca di sana. Yang membacanya adalah `snapshot()`, yang mengisi `name`
+    dari `nameFor`; terbukti 39 dari 40 elemen halaman IDX punya `name`.
+    Karena itu deteksi CAPTCHA menanyakan kedua sumber, dan sebuah halaman
+    baru dinyatakan bersih kalau keduanya sepakat. Menanyakan satu sumber
+    saja adalah asal mula bug `200 (file exists)` yang membuat enam saham
+    tercatat punya arsip padahal yang menjawab 200 adalah halaman challenge.
 
 ---
 

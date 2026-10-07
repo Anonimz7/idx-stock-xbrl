@@ -176,6 +176,29 @@ that came back with nothing — a challenge always has a page to resolve in
 instead of failing the request. The tab is held open for the whole run and
 closed at the end.
 
+Not every challenge resolves by waiting. The interactive one renders a
+checkbox labelled **"Verify you are human"** and answers `200`, so a probe
+reading only visible text finds neither 404 wording nor any of the
+automatic-challenge markers — and concludes the archive exists. Six stocks
+were recorded as `200 (file exists; downloads.download failed)` that way,
+when what had answered was the challenge page.
+
+On finding that checkbox the run **stops**: the held tab is brought to the
+front, a modal popup names the URL and asks for the click, and downloads
+resume from the same stock once the marker is gone. Declining — or a run
+where no popup can be shown — exits with code **4** and leaves the tab open,
+because it is showing the very box to click. Nothing clicks it automatically;
+doing so would be bypassing an access control.
+
+Detection reads the page twice on purpose. The `text` endpoint returns
+`innerText`, which never carries an element's `aria-label`, and that
+attribute is where the widget names itself — so the snapshot's accessibility
+names are consulted too, and a page is believed only when neither reading
+shows the marker.
+
+Exit codes: `0` success · `1` failures · `2` invalid input · `3` bridge
+unavailable · `4` CAPTCHA waiting for a human.
+
 A URL that genuinely has no audited archive for the year is reported per stock
 and never aborts the run; the whole run can be re-run later and already-fetched
 stocks skip instantly via the shared history check.
