@@ -14,8 +14,16 @@ from pathlib import Path
 
 import pytest
 from firefox_bridge import runconfig
+from firefox_bridge.captcha import CaptchaRequired
 from firefox_bridge.downloader.errors import DownloadTimeout
-from firefox_bridge.instance.cli import _failure_reason, _stock_delay, build_parser, run
+from firefox_bridge.instance import cli as cli_module
+from firefox_bridge.instance.cli import (
+    EXIT_CAPTCHA,
+    _failure_reason,
+    _stock_delay,
+    build_parser,
+    run,
+)
 
 
 def _parse(*argv: str) -> argparse.Namespace:
@@ -129,3 +137,43 @@ def test_stocks_are_required() -> None:
         run(["--year", "2025"])
 
     assert caught.value.code == 2
+
+
+def test_a_captcha_stops_the_run_with_its_own_exit_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keluar dengan 4, bukan 1 (unduhan gagal) dan bukan 3 (bridge mati).
+
+    Angka yang berbeda itu adalah kontraknya: "perbaiki setup Anda" dan
+    "pergi mencentang kotak" tidak boleh terbaca sama oleh pemanggil, dan
+    keduanya tidak boleh terbaca sebagai keberhasilan.
+    """
+    # Keduanya diarahkan ke tempat sementara. Staging TIDAK ikut
+    # FIREFOX_BRIDGE_INSTANCE_DIR -- ia mengikuti download_root() -- jadi
+    # tanpa variabel kedua ini scan_staging akan menghapus file parsial di
+    # folder unduhan sungguhan hanya karena sebuah tes dijalankan.
+    monkeypatch.setenv("FIREFOX_BRIDGE_DOWNLOAD_DIR", str(tmp_path / "downloads"))
+    monkeypatch.delenv("FIREFOX_BRIDGE_INSTANCE_DIR", raising=False)
+    monkeypatch.setattr(cli_module, "ensure_extension_ready", lambda _client: "v-test")
+
+    closed = False
+
+    class _BlockedSession:
+        def __init__(self, client: object, prompt: object = None) -> None:
+            assert prompt is not None, "run yang asli harus membawa popup CAPTCHA"
+
+        def ensure(self) -> None:
+            raise CaptchaRequired(
+                "halaman menampilkan CAPTCHA (https://www.idx.co.id/x/instance.zip)"
+            )
+
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    monkeypatch.setattr(cli_module, "IdxSession", _BlockedSession)
+
+    exit_code = run(["--stocks", "NCKL", "--year", "2025"])
+
+    assert exit_code == EXIT_CAPTCHA
+    assert not closed, "tab ditutup, jadi kotaknya hilang dari layar operator"

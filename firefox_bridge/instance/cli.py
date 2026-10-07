@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from firefox_bridge import runconfig
+from firefox_bridge.captcha import CaptchaRequired, prompt_to_solve
 from firefox_bridge.client import FirefoxBridgeClient, FirefoxBridgeClientError
 from firefox_bridge.downloader.errors import (
     DownloaderError,
@@ -50,6 +51,10 @@ EXIT_SUCCESS = 0
 EXIT_FAILURES = 1
 EXIT_INVALID_INPUT = 2
 EXIT_BRIDGE_UNAVAILABLE = 3
+# Kept apart from the three above: a run stopped for a human is neither a
+# failure of the downloader nor an unreachable bridge, and a caller reading
+# the code has to be able to tell "fix your setup" from "go click the box".
+EXIT_CAPTCHA = 4
 
 
 def _year_argument(value: str) -> int:
@@ -340,9 +345,10 @@ def run(argv: Sequence[str] | None = None) -> int:
     # page it can resolve instead of on the bare download request. Best effort:
     # a failure to open it is logged and the first download is left to prove the
     # point -- it must never abort a run that might otherwise still succeed.
-    session = IdxSession(client)
-    session.ensure()
+    session = IdxSession(client, prompt=prompt_to_solve)
+    captcha: str | None = None
     try:
+        session.ensure()
         for stock in stock_codes:
             try:
                 result = download_instance(
@@ -401,10 +407,25 @@ def run(argv: Sequence[str] | None = None) -> int:
                 )
                 summary.results.append(result)
             sleep_between_stocks(delay, args.delay_max)
+    except CaptchaRequired as error:
+        # Reached only after the operator declined or the box stayed put:
+        # `CaptchaRequired` is a BaseException, so the per-stock
+        # `except Exception` handlers above and below this loop pass it
+        # straight through rather than recording it as one more failure.
+        captcha = str(error)
     finally:
-        session.close()
+        if captcha is None:
+            session.close()
 
     print_run_summary(summary)
+    if captcha is not None:
+        # The tab is deliberately left open: it is showing the very box to
+        # click, and closing it would take the answer off the screen.
+        problem(f"CAPTCHA: {captcha}")
+        problem("  -> run DIHENTIKAN; tab IDX sengaja dibiarkan terbuka.")
+        problem('     Centang "Verify you are human" di tab itu, lalu jalankan')
+        problem("     ulang perintah yang sama; download_history.json jadi dasar resume.")
+        return EXIT_CAPTCHA
     if summary.fatal_error:
         return EXIT_BRIDGE_UNAVAILABLE
     return summary.exit_code

@@ -20,8 +20,15 @@ cannot be opened leaves every download to fail in turn, but never aborts the run
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
 
+from firefox_bridge.captcha import (
+    CAPTCHA_REASON,
+    MAX_PROMPT_ROUNDS,
+    CaptchaRequired,
+    is_captcha_page,
+)
 from firefox_bridge.client import FirefoxBridgeClient, FirefoxBridgeClientError
 from firefox_bridge.pacing import wait_before_step
 from firefox_bridge.progress import notice, progress
@@ -73,7 +80,14 @@ POLL_INTERVAL_SECONDS = 1.0
 
 
 def is_clear_page(page_text: str) -> bool:
-    """Return True when ``page_text`` looks like IDX rather than a challenge."""
+    """Return True when ``page_text`` looks like IDX rather than a challenge.
+
+    The interactive checkbox counts as not-clear for the same reason the
+    automatic one does -- neither is content -- but only the automatic one is
+    safe to wait out. Stopping on the other one is the caller's job.
+    """
+    if is_captcha_page(page_text):
+        return False
     lowered = page_text.lower()
     if any(marker in lowered for marker in CHALLENGE_MARKERS):
         return False
@@ -90,6 +104,12 @@ def classify_instance_page(page_text: str) -> str:
     this exists to tell apart.
     """
     lowered = (page_text or "").lower()
+    # Checked before the 404 wording and before the length test: the checkbox
+    # page answers 200, has no 404 text, and is long enough to pass for the
+    # homepage. Reading it as "file exists" is what cost six stocks their
+    # place in the history -- the 200 belongs to the challenge, not the zip.
+    if is_captcha_page(page_text):
+        return CAPTCHA_REASON
     if any(marker in lowered for marker in CHALLENGE_MARKERS):
         return "Cloudflare challenge"
     if any(marker in lowered for marker in NOT_FOUND_MARKERS):
@@ -124,11 +144,22 @@ def is_definitive_reason(reason: str) -> bool:
 
 
 class IdxSession:
-    """One kept-open IDX tab, opened on demand and re-pointed on refusal."""
+    """One kept-open IDX tab, opened on demand and re-pointed on refusal.
 
-    def __init__(self, client: FirefoxBridgeClient) -> None:
+    ``prompt`` is what turns an unsolved CAPTCHA into a stop: when one is
+    found, downloads halt and it is asked to show the checkbox to a human.
+    Left unset -- tests, and any embedder with no screen -- there is nobody
+    to ask, so the run stops without a popup rather than clicking for them.
+    """
+
+    def __init__(
+        self,
+        client: FirefoxBridgeClient,
+        prompt: Callable[[str | None], bool] | None = None,
+    ) -> None:
         self._client = client
         self._tab_id: Any = None
+        self._prompt = prompt
 
     @property
     def tab_id(self) -> Any:
@@ -209,6 +240,11 @@ class IdxSession:
                 page_text = self._text()
             except FirefoxBridgeClientError:
                 return
+            # The checkbox stops the run right here, before "siap" can be
+            # declared: a session that is only half-clear is what the last
+            # probe mistook for an archive that exists.
+            if self._captcha_seen(page_text):
+                page_text = self._resolve_captcha()
             if is_clear_page(page_text):
                 progress("STEP warmup: sesi IDX siap (takleo Cloudflare)", tab_id=self._tab_id)
                 return
@@ -254,6 +290,103 @@ class IdxSession:
                 return str(item.get("url") or "")
         return None
 
+    def _snapshot_text(self) -> str:
+        """Flatten the snapshot's accessibility names, or ``""`` if unreadable.
+
+        The snapshot is asked because ``text`` cannot answer this question:
+        that endpoint returns ``innerText``, and ``aria-label`` -- where the
+        checkbox names itself -- is an attribute, invisible to visible text.
+        Any trouble reading it resolves to "no names", which is the safe
+        direction: the caller is left with the wording it already has rather
+        than a spurious clearance.
+        """
+        if self._tab_id is None:
+            return ""
+        reader = getattr(self._client, "snapshot", None)
+        if not callable(reader):
+            return ""
+        try:
+            result = reader(self._tab_id, max_elements=200)
+        except Exception:  # noqa: BLE001 - best effort, never aborts a run
+            return ""
+        if not isinstance(result, dict):
+            return ""
+        elements = result.get("elements")
+        if not isinstance(elements, list):
+            return ""
+        names = [
+            str(item.get("name") or "")
+            for item in elements
+            if isinstance(item, dict)
+        ]
+        return " ".join(name for name in names if name)
+
+    def _captcha_seen(self, page_text: str) -> bool:
+        """True when the interactive checkbox is on the held tab.
+
+        Both readings are asked, for the reason in :meth:`_snapshot_text`.
+        A page is believed only when neither shows the marker: `text` misses
+        an ``aria-label`` the snapshot catches, and the snapshot is asked
+        precisely so that a page with no marker in its visible words is not
+        mistaken for content. One source alone is what let this pass for an
+        archive that existed.
+        """
+        if is_captcha_page(page_text):
+            return True
+        return is_captcha_page(self._snapshot_text())
+
+    def _activate(self) -> None:
+        """Bring the held tab forward: the popup says the checkbox is there."""
+        if self._tab_id is None:
+            return
+        try:
+            self._client.activate_tab(self._tab_id)
+        except Exception:  # noqa: BLE001 - the popup still shows without it
+            pass
+
+    def _resolve_captcha(self) -> str:
+        """Stop, ask a human to click the checkbox, and hand back the page.
+
+        Returns the re-read page once neither reading shows the marker, so
+        the caller carries on as though nothing had happened. Raises
+        :class:`CaptchaRequired` when there is no prompt to show, when the
+        operator declines, or when it is still there after
+        ``MAX_PROMPT_ROUNDS``: the run does not continue against a checkbox
+        it may not click for them, and it does not loop either.
+
+        Re-reads rather than trusting what the caller was holding: a page
+        that has just been clicked is not the page that was handed over, and
+        declaring it solved on stale evidence is the same mistake in
+        miniature.
+        """
+        url = self._current_url()
+        target = url or IDX_URL
+        self._activate()
+        if self._prompt is None:
+            raise CaptchaRequired(f"halaman menampilkan CAPTCHA ({target})")
+        notice(
+            f"CAPTCHA: {CAPTCHA_REASON} di {target}; unduhan dihentikan, "
+            "menunggu centang diselesaikan",
+        )
+        for _ in range(MAX_PROMPT_ROUNDS):
+            if not self._prompt(url):
+                raise CaptchaRequired(
+                    f"CAPTCHA tidak diselesaikan oleh operator ({target})",
+                )
+            try:
+                current = self._text()
+            except FirefoxBridgeClientError as error:
+                raise CaptchaRequired(
+                    f"gagal membaca ulang halaman CAPTCHA "
+                    f"({type(error).__name__}: {error})",
+                ) from error
+            if not self._captcha_seen(current):
+                progress("CAPTCHA terselesaikan; run dilanjutkan", tab_id=self._tab_id)
+                return current
+        raise CaptchaRequired(
+            f"CAPTCHA masih ada setelah {MAX_PROMPT_ROUNDS} kali ({target})",
+        )
+
     def probe_archive_reason(self, stock: str, year: int) -> str:
         """Navigate the held tab at one archive URL once and classify the response.
 
@@ -298,6 +431,15 @@ class IdxSession:
             if text.strip():
                 break
             time.sleep(POLL_INTERVAL_SECONDS)
+        # Asked before classifying, not after: a checkbox page answers 200
+        # with no 404 wording and enough text to pass for the homepage, so it
+        # would be filed as "200 (file exists)" -- an archive that exists
+        # only as far as the challenge is concerned. The tab is left exactly
+        # where it is when this raises, which is what makes the box visible
+        # to whoever the popup is asking; when it returns, the value is the
+        # page as it stands after the click.
+        if self._captcha_seen(text):
+            text = self._resolve_captcha()
         reason = classify_instance_page(text or "")
         try:
             self._client.navigate(self._tab_id, IDX_URL)

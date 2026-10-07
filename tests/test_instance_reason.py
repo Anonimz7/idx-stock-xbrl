@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from firefox_bridge.captcha import CAPTCHA_REASON, CaptchaRequired
 from firefox_bridge.client import FirefoxBridgeClientError
 from firefox_bridge.instance.session import (
     IDX_URL,
@@ -241,3 +242,58 @@ def test_probe_still_reports_200_when_navigation_never_commits() -> None:
 
     assert reason == "200 (file exists; downloads.download failed)"
     assert client.navigate_calls[-1][1] == IDX_URL
+
+
+# --- kotak centang yang menjawab 200 --------------------------------------
+#
+# Kasus yang nyata terjadi: enam saham masuk riwayat dengan alasan "200
+# (file exists; downloads.download failed)" setelah dua setengah jam
+# unduhan tanpa henti. Yang menjawab 200 adalah halaman challenge, bukan
+# instance.zip -- jadi "filenya ada" adalah kesimpulan yang keliru, dan
+# retry tiga kali hanya mengulang kesalahan yang sama tiga kali.
+
+CHECKBOX = '<input type="checkbox" aria-label="Verify you are human">'
+
+
+def test_klasifikasi_checkbox_bukan_200() -> None:
+    """Regresi: halaman CAPTCHA bukan arsip yang ada.
+
+    Panjangnya lebih dari ``MIN_READY_CHARS`` dan tidak memuat satu pun
+    penanda 404 -- dulu kedua hal itu sudah cukup untuk menyimpulkan file
+    terjangkau. Klasifikator sekarang bertanya dulu.
+    """
+    assert classify_instance_page(CHECKBOX) == CAPTCHA_REASON
+    assert (
+        classify_instance_page(CHECKBOX)
+        != "200 (file exists; downloads.download failed)"
+    )
+    # Dan alasan itu bukan vonis, jadi stoknya tetap boleh dicoba lagi.
+    assert not is_definitive_reason(CAPTCHA_REASON)
+
+
+def test_klasifikasi_checkbox_tetap_terbaca_diantara_marker_lain() -> None:
+    """Ditanyakan lebih dulu dari marker 404 dan dari panjang halaman.
+
+    Keduanya menyesatkan di sini: challenge tidak pernah menulis 404, dan
+    panjangnya justru membuatnya terbaca sebagai halaman penuh. Kalau urutan
+    ini terbalik, keduanya akan menutupi kotaknya.
+    """
+    assert classify_instance_page("404 " + CHECKBOX) == CAPTCHA_REASON
+    assert classify_instance_page(CHECKBOX + " " + "x" * 300) == CAPTCHA_REASON
+
+
+def test_probe_berhenti_di_checkbox_dan_meninggalkan_tab_terbuka() -> None:
+    """Tab sengaja tidak dipulihkan: kotaknya harus tetap terlihat.
+
+    Membalikkan tab ke homepage berarti menghapus jawaban dari layar tepat
+    ketika operator diminta mencentangnya.
+    """
+    client = _FakeClient([CHECKBOX])
+    session = IdxSession(client)  # tanpa prompt, run wajib berhenti
+    session._tab_id = "tab-1"
+
+    with pytest.raises(CaptchaRequired):
+        session.probe_archive_reason("ARKA", 2025)
+
+    assert client.navigate_calls[-1][1].endswith("/Audit/ARKA/instance.zip")
+    assert client.navigate_calls[-1][1] != IDX_URL
