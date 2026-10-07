@@ -1680,6 +1680,17 @@ dihentikan pada sesi sebelumnya, jadi harus dinyalakan lagi.
 
 ## 14. Lanjut Sesi Berikutnya
 
+> **Prioritas per 7 Oktober 2026 — baca dulu [`rencana-katalog.md`](rencana-katalog.md)**
+> sebelum melanjutkan apa pun. Di sana ada: keadaan run 785 yang **sedang
+> dijeda** di 554/785 (PID 9884, perintah resume dan perintah restart bila
+> proses sudah mati), temuan API `GetFinancialReport` beserta bukti bahwa API
+> itu tidak terbaca lewat bridge, rencana empat langkah menuju unduhan
+> berbasis katalog, dan daftar 12 jebakan yang sudah pernah memakan waktu.
+>
+> Satu larangan yang penting: **langkah 2 rencana itu (endpoint `evaluate`)
+> mengubah ekstensi, dan ekstensi yang diubah wajib di-reload — yang akan
+> mematikan sesi downloader.** Kerjakan hanya setelah run 785 selesai.
+
 Semua item P0 sudah `selesai` atau `berjalan`; tidak ada lagi berstatus `belum`
 kecuali SRC-001 sampai SRC-011, yang memang fase 2 (MariaDB) dan belum disentuh
 sengaja. Sesi berikutnya sebaiknya **menutup dua kriteria §8 yang masih BELUM**,
