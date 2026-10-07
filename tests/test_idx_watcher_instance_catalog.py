@@ -1,0 +1,194 @@
+"""Tes katalog instance.zip: parser halaman, merge, dan paginasi.
+
+Semua yang diuji di sini murni murni -- tanpa peramban, tanpa jembatan.
+Data contoh diambil dari bentuk halaman asli (filter Tahun 2025 / Tahunan).
+"""
+
+from __future__ import annotations
+
+import pytest
+from idx_watcher.instance_catalog import (
+    CatalogError,
+    find_element,
+    merge_entries,
+    next_page_button,
+    parse_instance_hrefs,
+    parse_stamps,
+    year_labels,
+)
+
+HREF = (
+    "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/"
+    "New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//"
+    "Laporan%20Keuangan%20Tahun%202025/Audit/AADI/instance.zip"
+)
+INLINE_XBRL = HREF.rsplit("/", 1)[0] + "/inlineXBRL.zip"
+PDF = HREF.rsplit("/", 1)[0] + "/FinancialStatement-2025-Tahunan-AADI.pdf"
+
+PAGE_TEXT = (
+    "Laporan Keuangan dan Tahunan 12 A-Z Filter Jenis Laporan "
+    "AADI 06 Maret 2026 | 15:57 Nama : PT Adaro Andalan Indonesia Tbk "
+    "Tahun : 2025 Periode : Audit "
+    "FinancialStatement-2025-Tahunan-AADI.pdf instance.zip "
+    "AALI 21 Februari 2026 | 18:40 Nama : Astra Agro Lestari Tbk "
+    "Tahun : 2025 Periode : Audit AALI LK Ta instance.zip "
+    "ABDA 30 April 2026 | 16:05 Tahun : 2025 Periode : Audit instance.zip "
+    "dari 71"
+)
+
+
+def _element(ref: str, role: str, name: str, *, disabled: bool = False, href: str = "") -> dict:
+    return {
+        "ref": ref,
+        "role": role,
+        "name": name,
+        "state": {"disabled": disabled},
+        **({"href": href} if href else {}),
+    }
+
+
+class TestParseInstanceHrefs:
+    def test_extracts_year_and_ticker_from_url(self) -> None:
+        found = parse_instance_hrefs([_element("e1", "link", "", href=HREF)])
+        assert found == {
+            "2025|AADI": {
+                "ticker": "AADI",
+                "year": 2025,
+                "period": "audit",
+                "url": HREF,
+            }
+        }
+
+    def test_ignores_inline_xbrl_and_other_attachments(self) -> None:
+        elements = [
+            _element("e1", "link", "", href=INLINE_XBRL),
+            _element("e2", "link", "", href=PDF),
+            _element("e3", "link", "", href=HREF),
+        ]
+        found = parse_instance_hrefs(elements)
+        assert list(found) == ["2025|AADI"]
+
+    def test_links_without_href_are_skipped(self) -> None:
+        assert parse_instance_hrefs([_element("e1", "button", "Terapkan")]) == {}
+
+    def test_accepts_unencoded_spaces(self) -> None:
+        plain = HREF.replace("%20", " ")
+        found = parse_instance_hrefs([_element("e1", "link", "", href=plain)])
+        assert "2025|AADI" in found
+
+
+class TestParseStamps:
+    def test_reads_full_indonesian_month(self) -> None:
+        assert parse_stamps(PAGE_TEXT)["AADI"] == "2026-03-06T15:57"
+
+    def test_reads_february_spelled_out(self) -> None:
+        assert parse_stamps(PAGE_TEXT)["AALI"] == "2026-02-21T18:40"
+
+    def test_month_alternation_prefers_long_form(self) -> None:
+        # "feb" tidak boleh memotong "februari" menjadi sisa yang tak terbaca.
+        assert parse_stamps("AALI 21 Februari 2026 | 18:40")["AALI"] == "2026-02-21T18:40"
+
+    def test_pads_single_digit_day(self) -> None:
+        assert parse_stamps("ADES 1 Mei 2026 | 09:05")["ADES"] == "2026-05-01T09:05"
+
+    def test_ignores_filename_without_timestamp(self) -> None:
+        text = "FinancialStatement-2025-Tahunan-AADI.pdf instance.zip"
+        assert parse_stamps(text) == {}
+
+    def test_no_match_returns_empty(self) -> None:
+        assert parse_stamps("") == {}
+
+
+class TestFindElement:
+    def test_matches_role_and_label_exactly(self) -> None:
+        elements = [
+            _element("e1", "radio", "2026"),
+            _element("e2", "radio", "2025"),
+            _element("e3", "button", "Terapkan"),
+        ]
+        year_radio = find_element(elements, role="radio", name="2025")
+        apply_button = find_element(elements, role="button", name="Terapkan")
+        assert year_radio is not None
+        assert apply_button is not None
+        assert year_radio["ref"] == "e2"
+        assert apply_button["ref"] == "e3"
+
+    def test_returns_none_when_absent(self) -> None:
+        assert find_element([], role="radio", name="2025") is None
+
+    def test_label_must_match_whole_string(self) -> None:
+        elements = [_element("e1", "button", "Go to next page")]
+        assert find_element(elements, role="button", name="next") is None
+
+
+class TestNextPageButton:
+    def test_reports_enabled_button(self) -> None:
+        ref, done = next_page_button([_element("e9", "button", "Go to next page")])
+        assert (ref, done) == ("e9", False)
+
+    def test_reports_disabled_button_as_finished(self) -> None:
+        ref, done = next_page_button(
+            [_element("e9", "button", "Go to next page", disabled=True)]
+        )
+        assert (ref, done) == ("e9", True)
+
+    def test_missing_button_is_finished(self) -> None:
+        assert next_page_button([]) == (None, False)
+
+
+class TestYearLabels:
+    def test_collects_only_four_digit_radios_in_descending_order(self) -> None:
+        elements = [
+            _element("e1", "radio", "2026"),
+            _element("e2", "radio", "2025"),
+            _element("e3", "radio", "Triwulan 1"),
+            _element("e4", "radio", "Saham"),
+            _element("e5", "radio", "2022"),
+        ]
+        assert year_labels(elements) == ["2026", "2025", "2022"]
+
+    def test_empty_when_no_year_radios(self) -> None:
+        assert year_labels([_element("e1", "radio", "Saham")]) == []
+
+
+class TestMergeEntries:
+    def test_records_upload_time_and_witnessed_at(self) -> None:
+        catalog: dict = {}
+        found = parse_instance_hrefs([_element("e1", "link", "", href=HREF)])
+        added, changed = merge_entries(catalog, found, {"AADI": "2026-03-06T15:57"}, "2026-10-07T10:00:00+07:00")
+        entry = catalog["entries"]["2025|AADI"]
+        assert (added, changed) == (1, 0)
+        assert entry["uploaded_at"] == "2026-03-06T15:57"
+        assert entry["first_seen"] == "2026-10-07T10:00:00+07:00"
+        assert entry["last_seen"] == "2026-10-07T10:00:00+07:00"
+
+    def test_repeat_scan_only_touches_last_seen(self) -> None:
+        catalog: dict = {}
+        found = parse_instance_hrefs([_element("e1", "link", "", href=HREF)])
+        merge_entries(catalog, found, {"AADI": "2026-03-06T15:57"}, "2026-10-07T10:00:00+07:00")
+        added, changed = merge_entries(catalog, found, {"AADI": "2026-03-06T15:57"}, "2026-10-08T10:00:00+07:00")
+        entry = catalog["entries"]["2025|AADI"]
+        assert (added, changed) == (0, 0)
+        assert entry["first_seen"] == "2026-10-07T10:00:00+07:00"
+        assert entry["last_seen"] == "2026-10-08T10:00:00+07:00"
+
+    def test_counts_entry_when_upload_time_appears_later(self) -> None:
+        catalog: dict = {}
+        found = parse_instance_hrefs([_element("e1", "link", "", href=HREF)])
+        merge_entries(catalog, found, {}, "2026-10-07T10:00:00+07:00")
+        assert "uploaded_at" not in catalog["entries"]["2025|AADI"]
+        added, changed = merge_entries(catalog, found, {"AADI": "2026-03-06T15:57"}, "2026-10-08T10:00:00+07:00")
+        assert (added, changed) == (0, 1)
+        assert catalog["entries"]["2025|AADI"]["uploaded_at"] == "2026-03-06T15:57"
+
+    def test_never_lowers_a_recorded_upload_time(self) -> None:
+        catalog: dict = {}
+        found = parse_instance_hrefs([_element("e1", "link", "", href=HREF)])
+        merge_entries(catalog, found, {"AADI": "2026-03-06T15:57"}, "2026-10-07T10:00:00+07:00")
+        merge_entries(catalog, found, {}, "2026-10-08T10:00:00+07:00")
+        assert catalog["entries"]["2025|AADI"]["uploaded_at"] == "2026-03-06T15:57"
+
+
+def test_catalog_error_is_a_runtime_error() -> None:
+    with pytest.raises(RuntimeError):
+        raise CatalogError("x")
