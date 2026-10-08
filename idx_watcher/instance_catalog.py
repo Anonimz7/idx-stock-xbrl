@@ -63,7 +63,6 @@ API_URL = (
     "?indexFrom=1&pageSize=5000&reportType=rdf&EmitenType=s"
     "&kodeEmiten=&SortColumn=KodeEmiten&SortOrder=asc&year={year}&periode=audit"
 )
-PAGE_SIZE = 12
 PERIOD = "audit"
 REPORT_TYPE_LABEL = "Laporan Keuangan"
 EMITEN_TYPE_LABEL = "Saham"
@@ -546,8 +545,9 @@ def import_from_api(
     if not path.exists():
         raise CatalogError(
             f"file API tidak ditemukan: {path}\n"
-            "  Unduh dari https://www.idx.co.id/primary/ListedCompany/GetFinancialReport"
-            "?pageSize=5000&year=<TAHUN>&reportType=rdf&EmitenType=s&periode=audit"
+            "  Ambil lewat peramban (Python diblokir Cloudflare, HTTP 403), "
+            "simpan hasilnya, lalu beri path-nya ke --api-file:\n"
+            f"  {API_URL.format(year='<TAHUN>')}"
         )
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
