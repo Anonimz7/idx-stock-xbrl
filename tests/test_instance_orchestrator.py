@@ -82,6 +82,31 @@ def _recorded_hash(root: Path, stock: str) -> str:
     return str(entry["sha256"])
 
 
+def _record_failure(
+    root: Path, stock: str, reason: str, href: str | None = None
+) -> None:
+    """Write the history entry a failed attempt leaves behind.
+
+    Deliberately carries no ``file``/``sha256``: that absence is what makes the
+    shared skip rule treat the stock as never attempted, so every failure
+    reaches the download point again. These tests pin the half of the decision
+    that used to be missing -- the recorded ``reason`` deciding whether that
+    second attempt is worth making.
+    """
+    history = load_download_history(root)
+    history["downloads"].setdefault(stock, {}).setdefault(str(YEAR), {})["4"] = {
+        "url": href or instance_url(stock, YEAR),
+        "status": "failed",
+        "error_type": "DownloadTimeout",
+        "reason": reason,
+        "fail_count": 1,
+        "failed_at": "2026-10-07T00:00:00+00:00",
+    }
+    target = root / "saham" / "download_history.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(history), encoding="utf-8")
+
+
 class _RefusingClient:
     """Any call is a test failure: the code under test must not reach the network."""
 
@@ -148,6 +173,61 @@ def test_missing_file_with_a_recorded_entry_downloads(
 
     assert result.downloaded
     assert instance_final_path("NCKL", YEAR, instance_root).is_file()
+
+
+def test_recorded_404_for_the_same_url_is_not_retried(instance_root: Path) -> None:
+    """A verdict the URL already gave must not be asked a second time.
+
+    `_RefusingClient` fails the test on any network call, so the skip is
+    asserted directly rather than inferred from a returned status.
+    """
+    _record_failure(instance_root, "NCKL", "404 Not Found")
+
+    result = download_instance(_RefusingClient(), "NCKL", YEAR)
+
+    assert result.skipped
+    assert not instance_final_path("NCKL", YEAR, instance_root).is_file()
+
+
+def test_recorded_404_for_a_different_url_is_retried(
+    instance_root: Path, no_sleep: None
+) -> None:
+    """Fixing the URL construction voids the verdict that was based on it.
+
+    Without this, a wrong pattern would be recorded as 404 once and then
+    skipped forever -- the verdict outliving the thing it judged, with no
+    reset step to recover from.
+    """
+    _record_failure(
+        instance_root,
+        "NCKL",
+        "404 Not Found",
+        href="https://example.invalid/wrong/NCKL.zip",
+    )
+
+    client = _ServingClient(payload="repaired")
+    result = download_instance(client, "NCKL", YEAR)
+
+    assert result.downloaded
+    assert len(client.calls) == 1
+
+
+def test_a_condition_is_retried_even_when_it_is_already_recorded(
+    instance_root: Path, no_sleep: None
+) -> None:
+    """The CAPTCHA-damaged answer must be asked again, unlike the 404.
+
+    `200 (file exists; downloads.download failed)` is a condition: the URL
+    served and only the transfer failed. Skipping it would strand exactly the
+    six stocks the interactive challenge broke on 2026-10-07.
+    """
+    _record_failure(instance_root, "NCKL", "200 (file exists; downloads.download failed)")
+
+    client = _ServingClient()
+    result = download_instance(client, "NCKL", YEAR)
+
+    assert result.downloaded
+    assert len(client.calls) == 1
 
 
 def test_hash_mismatch_triggers_a_redownload(

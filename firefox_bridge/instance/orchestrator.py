@@ -29,7 +29,12 @@ from ..downloader.filesystem import (
     is_download_complete,
     move_completed_download,
 )
-from ..downloader.history import history_entry, load_download_history, record_download_history
+from ..downloader.history import (
+    REASON_KEY,
+    history_entry,
+    load_download_history,
+    record_download_history,
+)
 from ..downloader.integrity import file_sha256
 from ..downloader.models import (
     SHA256_KEY,
@@ -290,6 +295,31 @@ def download_instance(
             return _make_result(
                 code, year, href, final_path, history, STATUS_SKIPPED,
             )
+
+    # A recorded 404 for this exact URL is a verdict, not a condition, and it
+    # has to survive the end of the run. `is_definitive_reason` already says no
+    # retry could change it; discarding that at exit is what made every run
+    # spend another fifteen seconds to hear the same answer again while
+    # `fail_count` climbed and nothing ever read it.
+    #
+    # Keyed on the URL so the verdict cannot outlive what it judged: fixing the
+    # construction changes `href`, the comparison fails, and the stock is asked
+    # again on its own -- no reset step, no stale verdict to remember. Every
+    # other answer falls through to the retry below, which is exactly what lets
+    # a CAPTCHA-damaged "200 (file exists...)" be asked a second time.
+    if (
+        recorded is not None
+        and not integrity_failed
+        and recorded.get("url") == href
+        and is_definitive_reason(str(recorded.get(REASON_KEY) or ""))
+    ):
+        progress(
+            f"STEP SKIP: instance {code} {year} sudah dijawab "
+            f"{recorded.get(REASON_KEY)} untuk URL yang sama; tidak diulang",
+            stock=code,
+            year=year,
+        )
+        return _make_result(code, year, href, final_path, history, STATUS_SKIPPED)
 
     if recorded is not None and not integrity_failed:
         notice(
