@@ -7991,8 +7991,26 @@
       "uploaded_at": "2026-03-31T11:11",
       "url": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/Audit/ZINC/instance.zip",
       "year": 2025
+    },
+    "2025|ZONE": {
+      "first_seen": "2026-10-08T15:02:48+07:00",
+      "last_seen": "2026-10-08T15:02:48+07:00",
+      "period": "audit",
+      "ticker": "ZONE",
+      "uploaded_at": "2026-04-02T20:51",
+      "url": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/Audit/ZONE/instance.zip",
+      "year": 2025
+    },
+    "2025|ZYRX": {
+      "first_seen": "2026-10-08T15:02:48+07:00",
+      "last_seen": "2026-10-08T15:02:48+07:00",
+      "period": "audit",
+      "ticker": "ZYRX",
+      "uploaded_at": "2026-03-28T16:06",
+      "url": "https://www.idx.co.id/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan%20Keuangan%20Tahun%202025/Audit/ZYRX/instance.zip",
+      "year": 2025
     }
   },
-  "source": "https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan/",
-  "updated_at": "2026-10-08T10:52:52+07:00"
+  "source": "https://www.idx.co.id/primary/ListedCompany/GetFinancialReport?indexFrom=1&pageSize=5000&year=2025&reportType=rdf&EmitenType=s&periode=audit&kodeEmiten=&SortColumn=KodeEmiten&SortOrder=asc",
+  "updated_at": "2026-10-08T15:02:48+07:00"
 }

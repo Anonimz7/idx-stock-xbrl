@@ -1,8 +1,8 @@
 # Rencana Implementasi: Unduhan Berbasis Katalog IDX
 
-Tanggal: 7 Oktober 2026
-Status: **rencana** — belum ada baris kode yang mengerjakan langkah 3–5
-Fokus sesaat: **selesaikan run 785 yang tertunda** (lihat §1)
+Tanggal: 7 Oktober 2026 — **diperbarui 8 Oktober 2026**
+Status: **langkah 0 dan 1 selesai**; langkah 2–4 masih rencana
+Fokus: **putusan API sebagai sumber kebenaran** (§2.4), lalu langkah 3–4
 Dokumen ini ditulis agar bisa dieksekusi ulang **tanpa konteks percakapan**.
 
 > Legenda: **[TERVERIFIKASI]** = sudah dibuktikan lewat percobaan nyata,
@@ -50,7 +50,18 @@ atas adalah koreksinya.
 
 ## 1. Keadaan saat dokumen ini ditulis
 
-### Run 785 — masih berjalan; JANGAN sentuh bridge sebelum selesai
+### Run 785 — **SELESAI** (riwayat di bawah dipertahankan sebagai catatan cara kerja)
+
+> **Status 8 Oktober 2026:** run **selesai** — 785/785 tercatat, **723 berkas**
+> unduh + **62** gagal `404 Not Found`, 0 folder 2025 kosong, 0 file tersisa di
+> staging, CAPTCHA tidak pernah muncul. Waktu ±7 menit setelah perbaikan jeda
+> (§4 butir 13), dari sebelumnya ±45 menit.
+>
+> Karena itu peringatan **"JANGAN sentuh bridge sebelum selesai" tidak berlaku
+> lagi** — bridge bebas dimatikan/dihidupkan (sudah terbukti aman, extension
+> 0.1.8 menyambung sendiri). Yang **tetap dilarang** hanyalah **mengubah kode
+> extension**: itu menuntut reload manual dan barulah sesi putus. Perintah,
+> kueri PID, dan cara jeda di bawah tetap berlaku untuk run berikutnya.
 
 | Item | Nilai |
 | --- | --- |
@@ -115,7 +126,9 @@ extension** — itu menuntut reload manual dan barulah sesi run putus.
 | `idx_watcher/__init__.py` | Menjadikan `idx_watcher` paket (dibutuhkan mypy) |
 | `tests/test_idx_watcher_instance_catalog.py` | 23 tes murni (parser, merge, paginasi) |
 
-Commit: `dac41f7` (stop-on-404) → `c3c6998` (watcher) → `d4f52f1` (CSV).
+Commit: `dac41f7` (stop-on-404) → `c3c6998` (watcher) → `d4f52f1` (CSV) →
+`236bc2f` (lewati 404) → `bb35936` (jeda hanya untuk yang menyentuh IDX) →
+`da4b7c4` (katalog 890 entri dari API).
 
 **Penting:** katalog dan downloader **belum tersambung**. Menjalankan watcher
 saat ini menghasilkan data referensi; tidak ada satu pun keputusan unduhan
@@ -172,7 +185,7 @@ Nilai parameter:
 | `periode` | `tw1` `tw2` `tw3` `audit` | `audit` = Tahunan |
 | `tahun` | 2022–2026 | |
 | `kodeEmiten` | kosong = semua, atau satu ticker | |
-| `pageSize` | belum diuji batas atasnya | |
+| `pageSize` | **`5000` sudah diuji** — mengembalikan seluruh 890 entri 2025/audit dalam **satu** permintaan, tanpa perlu `indexFrom` berikutnya | |
 
 Bentuk respons (disalin dari respons sungguhan):
 
@@ -210,9 +223,13 @@ Bentuk respons (disalin dari respons sungguhan):
 
 Dua keunggulan atas halaman yang dirender:
 
-- `File_Modified` **presisi detik**, bukan menit
+- `File_Modified` **presisi milidetik** (`2026-03-06T15:57:00.003`), bukan
+  menit seperti cap waktu halaman (`06 Maret 2026 | 15:57`) — momennya sama,
+  hanya API yang lebih teliti.
 - lampiran `instance.zip` bisa disaring dari `Attachments` dengan `File_Name`,
   lalu `File_Path` diprefix `https://www.idx.co.id` → URL final
+
+**Tetapi yang paling penting: API lengkap, halaman tidak** — lihat §2.4.
 
 ### 2.2 API itu TIDAK bisa dibaca lewat bridge [TERVERIFIKASI]
 
@@ -273,14 +290,43 @@ https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan/
   Nama bulan **ditulis lengkap** (`Februari`, `Maret`), bukan `Feb`/`Mar`.
   Cap waktu itulah **saat unggah**, presisi menit.
 
+### 2.4 Halaman daftar TIDAK lengkap — pakai API [TERVERIFIKASI]
+
+> **Putusan: anggap API sebagai satu-satunya sumber kebenaran.**
+
+Halaman daftar **menjatuhkan baris yang sebenarnya ada.** Terbukti pada
+8 Oktober 2026 untuk tahun 2025/audit:
+
+| Sumber | Jumlah | Selisih |
+| --- | --- | --- |
+| API `GetFinancialReport` (`pageSize=5000`) | **890** | acuan |
+| Pemindaian halaman (74 halaman penuh) | 888 | **−2** |
+| Berkas nyata di `Downloads\instance\saham` | **890** | 0 |
+
+- API − halaman = `['ZONE', 'ZYRX']`; halaman − API = kosong.
+- Keduanya **ada**, diverifikasi manual di halaman profil masing-masing:
+  `…/profil-perusahaan-tercatat/ZONE` menampilkan *Laporan Keuangan Tahun 2025,
+  Periode Audit*, lengkap dengan `instance.zip`.
+- `label_delisted` keduanya `0`, jadi bukan karena sudah delisted.
+
+**Ini bukan bug paginasi di sisi kita.** Pemindaian memang setia pada yang
+disajikan halaman: 74 halaman, semuanya penuh 12 baris, `state.disabled` tombol
+`Go to next page` `true` di halaman terakhir, footer menulis `dari 74` (=888),
+dan kedua kode tidak muncul di satu pun dari 888 baris itu. Halamannya memang
+menyajikan 888; API menyajikan 890.
+
+**Konsekuensi:** `--source page` tidak boleh dipakai sebagai sumber kelengkapan.
+Ia tetap berguna untuk membaca halaman, tetapi angka kelengkapannya tidak bisa
+diandalkan.
+
 ---
 
 ## 3. Rencana empat langkah
 
 ```
-0. Selesaikan run 785              ← fokus saat ini, 35 menit
-1. Cocokkan 40 kode 404 vs katalog ← diagnostik termurah, menjawab "benarkah tidak ada?"
-2. Endpoint `evaluate` di bridge   ← MENGHENTIKAN RUN; kerjakan setelah 0
+0. Selesaikan run 785              ← SELESAI 8 Okt: 785/785, 723 unduh + 62 gagal 404
+1. Cocokkan kode 404 vs katalog    ← SELESAI 8 Okt: 0 dari 62 ada di API
+2. Endpoint `evaluate` di bridge   ← masih RENCANA (tak wajib, lihat Langkah 3)
 3. Mode `--source api` di watcher  ← katalog jadi murah
 4. Downloader membaca katalog      ← metode baru aktif
 ```
@@ -297,13 +343,28 @@ Jalankan perintah resume di §1. Selesai ketika log menunjukkan selesai dan
 `785/785` tercatat. Kegagalan `404 Not Found` yang tersisa itu wajar —
 sekitar ±40-an dari 785.
 
-### Langkah 1 — cocokkan 40 kode 404 terhadap katalog [TERVERIFIKASI langkahnya]
+### Langkah 1 — cocokkan kode 404 terhadap katalog [SELESAI 8 Okt 2026]
 
-Tujuan: menjawab pertanyaan yang selama ini tidak bisa dijawab —
-***apakah benar-benar tidak ada laporan, atau pola URL kita yang salah?***
+**Hasil: 62 kode 404, nol di antaranya ada di katalog → pola konstruksi bersih.**
+
+| Pemeriksaan | Angka |
+| --- | --- |
+| Kode berstatus `404 Not Found` (2025, di CSV 785) | **62** |
+| yang ternyata ada di API | **0** |
+| yang benar tidak ada di API | **62** |
+| `File_Path` API vs URL yang kita susun, seluruh katalog | **890 identik, 0 berbeda** |
+
+Uji terakhir itu yang paling kuat: seluruh 890 baris `File_Path` dari API
+**identik string** dengan URL yang tersimpan di `download_history.json`.
+Jadi bukan hanya "unduhannya berhasil", tetapi URL-nya memang sama dengan
+yang IDX sendiri catat.
+
+Ongkos: ±3 menit scan halaman + ±2 menit pencocokan, tanpa satu pun unduhan.
+
+Metode langkahnya (dipakai, lalu digantikan API — lihat §2.4):
 
 1. `python -m idx_watcher.instance_catalog --years 2025`
-2. Ambil semua kode berstatus `404 Not Found` hari ini dari
+2. Ambil semua kode berstatus `404 Not Found` dari
    `C:\Users\ORCA\Downloads\instance\saham\download_history.json` (field
    `failed_at` + `reason == "404 Not Found"`).
 3. Cocokkan: `kunci = f"2025|{KODE}"`.
@@ -312,10 +373,8 @@ Keputusan:
 
 | Hasil | Makna | Tindakan |
 | --- | --- | --- |
-| Tidak ada satu pun dari 40 yang ada di katalog | Pola konstruksi bersih, 404 memang artinya tidak ada laporan | Lanjut ke langkah 3–4 dengan yakin |
+| Tidak ada satu pun kode 404 yang ada di katalog | Pola konstruksi bersih, 404 memang artinya tidak ada laporan | Lanjut ke langkah 3–4 dengan yakin ← **kasus ini, 62/62** |
 | Ada yang **ada di katalog** tapi tetap 404 | **Pola URL kita salah** untuk emiten itu | Selidiki `File_Path` mereka; ini temuan severity tinggi, bukan bug kecil |
-
-Ongkos: ±2 menit, satu tahun, tanpa unduhan.
 
 ### Langkah 2 — endpoint `evaluate` di bridge [RENCANA]
 
@@ -469,12 +528,27 @@ Semua ini pernah memakan waktu dalam sesi ini. Jangan diulangi.
     baru dinyatakan bersih kalau keduanya sepakat. Menanyakan satu sumber
     saja adalah asal mula bug `200 (file exists)` yang membuat enam saham
     tercatat punya arsip padahal yang menjawab 200 adalah halaman challenge.
+16. **Halaman daftar `laporan-keuangan-dan-tahunan/` TIDAK lengkap — jangan
+    dijadikan acuan kelengkapannya.** Untuk 2025/audit halaman menyajikan 888
+    baris, API menyajikan 890, selisihnya `ZONE` dan `ZYRX`. Keduanya benar-benar
+    ada (diverifikasi di halaman profil perusahaan masing-masing). Paginasi kita
+    sendiri sudah benar — 74 halaman penuh, tombol next benar-benar mati. Detail
+    di §2.4. **Acuan: API.**
+17. **Akar berkas ada dua, dan yang satu nyaris kosong.** `Downloads\saham`
+    berisi **1 folder** (hanya `staging`); semua arsip ada di
+    `Downloads\instance\saham` (**890 folder**). Memeriksa akar yang salah
+    membuat kesimpulan "belum diunduh" membengkak jadi 167 emiten — persis
+    yang terjadi saat mencocokkan katalog. Selalu pakai
+    `firefox_bridge.instance.paths.instance_download_dir()`, dan
+    `stock_year_complete(..., download_dir=root)` wajib diberi `root` secara
+    eksplisit.
 
 ---
 
 ## 5. Gate dan baseline
 
-Semua angka di bawah diukur 7 Oktober 2026, setelah commit `d4f52f1`.
+Semua angka di bawah **diukur ulang 8 Oktober 2026** (aslinya 7 Okt setelah
+commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
 
 ```bash
 .venv\Scripts\python.exe -m pytest -q                 # seluruh suite, hijau
@@ -492,22 +566,25 @@ Semua angka di bawah diukur 7 Oktober 2026, setelah commit `d4f52f1`.
 
 | Gate | Nilai | Catatan |
 | --- | --- | --- |
-| pytest | hijau | **588 tes** (23 di antaranya milik `idx_watcher`) |
+| pytest | hijau | **612 tes** di 36 file (23 di antaranya milik `idx_watcher`); 588 saat baseline 7 Okt |
 | ruff file baru | **0** | wajib tetap 0 |
 | ruff penuh | **14** | pre-existing. Turun dari baseline 17 karena 3 error ikut terhapus bersama `announcement_watcher.py` (sudah diverifikasi: file lama persis 3 error) |
 | mypy gate | **6** | pre-existing di `firefox_bridge/cli.py`. Tidak boleh naik |
-| mypy `.` | ±89 | bukan gate, ada di `tests/` |
+| mypy `.` | ±90 | bukan gate, ada di `tests/` |
 
 ---
 
 ## 6. Definisi selesai
 
-- [ ] Run 785 mencapai 785/785 tanpa kerusakan; `history verify` bersih
-- [ ] 40 kode 404 sudah dicek terhadap katalog, hasilnya didokumentasikan
-      (§3 langkah 1) — ini yang menjawab apakah pola konstruksi bersih
+- [x] Run 785 mencapai 785/785 tanpa kerusakan — **8 Okt: 723 unduh +
+      62 gagal `404 Not Found`, 0 folder kosong, 0 file tersisa di staging**
+- [x] Kode 404 sudah dicek terhadap katalog, hasilnya didokumentasikan
+      (§3 langkah 1) — **62/62 tidak ada di API; 890/890 URL identik**
 - [ ] Endpoint `evaluate` teruji `document.title` → `location.href` → `fetch` API
-- [ ] `--source api` dan `--source page` menghasilkan katalog yang **sama**
-      untuk tahun yang sama (uji silang — ini yang membuktikan keduanya benar)
+- [ ] `--source api` dan `--source page` **bukan** untuk membuktikan keduanya
+      sama — keduanya memang **tidak** akan sama (§2.4). Yang diuji:
+      `--source page` **≤** `--source api`, dan selisihnya harus bisa
+      dijelaskan satu per satu. Selama ini selisihnya `ZONE`, `ZYRX`.
 - [ ] Mode `--catalog` menolak mengunduh di luar katalog, dan 404 di atas
       URL katalog dilaporkan sebagai anomali, bukan "tidak ada laporan"
 - [ ] Gate §5 tidak bergerak ke arah yang salah
