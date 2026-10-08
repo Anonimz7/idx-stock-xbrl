@@ -3,14 +3,20 @@
 Run from a source checkout::
 
     .venv\\Scripts\\python.exe -m firefox_bridge.instance.cli \\
-        --stocks "NCKL,BBCA" --year 2025
+        --catalog db\\instance_catalog.json --year 2025
 
 After installation the same run is available as ``firefox-bridge-instance``.
 
 Separate from ``firefox-bridge-download`` on purpose: that program reads links
-out of the page, this one builds them. They share the history, staging, retry and
-hash machinery, and keep separate download roots so those histories cannot
-overwrite one another.
+out of the page, this one takes them from the catalog -- a list of archives
+IDX has actually published, built by ``idx_watcher``. They share the history,
+staging, retry and hash machinery, and keep separate download roots so those
+histories cannot overwrite one another.
+
+The list is not an option here. It used to be: a stock code on the command
+line was turned into a URL whether or not an archive existed behind it, so
+every run collected404s that meant "our guess was wrong". Reading the catalog
+instead means the program only ever asks for something that was seen.
 """
 
 from __future__ import annotations
@@ -34,17 +40,17 @@ from firefox_bridge.downloader.models import RunSummary
 from firefox_bridge.downloader.paths import SAHAM_FOLDER
 from firefox_bridge.downloader.reporting import print_run_summary
 from firefox_bridge.downloader.staging import describe, scan_staging
+from firefox_bridge.instance.catalog import CatalogError, divergent, load_entries
 from firefox_bridge.instance.orchestrator import download_instance
 from firefox_bridge.instance.paths import (
     instance_download_dir,
     instance_final_path,
     instance_staging_root,
 )
-from firefox_bridge.instance.session import IdxSession
-from firefox_bridge.instance.urls import AUDITED_QUARTER, instance_url
+from firefox_bridge.instance.session import NOT_FOUND_REASON, IdxSession
+from firefox_bridge.instance.urls import AUDITED_QUARTER
 from firefox_bridge.pacing import minimum_one_second, sleep_between_stocks
-from firefox_bridge.progress import problem, progress
-from firefox_bridge.stocksource import StockListError, read_stock_list
+from firefox_bridge.progress import notice, problem, progress
 from firefox_bridge.validation import ValidationError, normalize_stock_code
 
 EXIT_SUCCESS = 0
@@ -55,6 +61,13 @@ EXIT_BRIDGE_UNAVAILABLE = 3
 # failure of the downloader nor an unreachable bridge, and a caller reading
 # the code has to be able to tell "fix your setup" from "go click the box".
 EXIT_CAPTCHA = 4
+
+# Resolved from this file rather than from the working directory, so the
+# default is the same catalog no matter where the command is run from. It is
+# deliberately the same path idx_watcher writes by default -- two defaults
+# that disagree would make "the command from the README found nothing" the
+# normal outcome.
+DEFAULT_CATALOG = Path(__file__).resolve().parent.parent.parent / "db" / "instance_catalog.json"
 
 
 def _year_argument(value: str) -> int:
@@ -75,17 +88,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--stocks",
-        default=None,
-        help="Comma-separated stock codes (e.g. NCKL,BBCA). Required unless --stocks-file is used.",
-    )
-    parser.add_argument(
-        "--stocks-file",
+        "--catalog",
         type=str,
-        default=None,
+        default=str(DEFAULT_CATALOG),
         help=(
-            "Read stock codes from a .sql dump or a .csv/.txt table, excluding rows "
-            "whose delisted flag is set. Merged with --stocks when both are given."
+            "Path to the instance catalog JSON produced by idx_watcher "
+            "(default: db/instance_catalog.json). Every archive this run "
+            "attempts is read from it -- the URL is never constructed, so a "
+            "404 means the file vanished from IDX rather than that our guess "
+            "was wrong."
         ),
     )
     parser.add_argument(
@@ -133,55 +144,49 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_stock_codes(raw: str) -> list[str]:
-    """Return normalized, de-duplicated stock codes preserving input order.
+def _load_catalog(args: argparse.Namespace, parser: argparse.ArgumentParser) -> list[tuple[str, str]]:
+    """Return ``(code, url)`` for the requested year, or exit as a usage error.
 
-    Each code becomes a folder name under `saham/`, so validation happens here
-    rather than at the point of use: the cheapest moment to reject `../` is
-    before a download is started, with an exit code the caller can tell apart
-    from a download failure.
+    Two checks happen here rather than downstream, both for the same reason:
+    they are cheaper before a download exists to have to undo.
+
+    The codes become folder names, so a catalog carrying ``../`` is rejected
+    at the door -- the rule ``parse_stock_codes`` used to apply to the command
+    line now applies to the file, which is just as attacker-adjacent if it
+    was fetched by hand and never inspected.
+
+    The drift report is a report, not a gate: the catalog wins, because it is
+    the source of truth. It says out loud when it has stopped matching the
+    URL shape this program has always reproduced, which is what a stale or
+    truncated fetch looks like.
     """
-    codes: list[str] = []
-    for item in raw.split(","):
-        if not item.strip():
-            continue
+    try:
+        entries = load_entries(args.catalog, args.year)
+    except CatalogError as error:
+        parser.error(str(error))
+
+    for code, _url in entries:
         try:
-            code = normalize_stock_code(item)
+            normalize_stock_code(code)
         except ValidationError as error:
-            raise argparse.ArgumentTypeError(str(error)) from error
-        if code not in codes:
-            codes.append(code)
-    return codes
+            parser.error(f"Kode di katalog tidak valid: {error}")
 
-
-def _collect_stocks(args: argparse.Namespace, parser: argparse.ArgumentParser) -> list[str]:
-    """Return every requested stock code, from --stocks and/or --stocks-file."""
-    stock_codes: list[str] = []
-    if args.stocks:
-        try:
-            stock_codes = parse_stock_codes(args.stocks)
-        except argparse.ArgumentTypeError as error:
-            parser.error(f"Stock code tidak valid: {error}")
-
-    if args.stocks_file is not None:
-        try:
-            stock_list = read_stock_list(Path(args.stocks_file))
-        except StockListError as error:
-            parser.error(f"Daftar saham tidak bisa dibaca: {error}")
-        progress(
-            f"STEP 0: daftar saham dari {args.stocks_file}: "
-            f"{len(stock_list.codes)} aktif, {stock_list.skipped_delisted} delisted dilewati",
-            file=args.stocks_file,
-            active=len(stock_list.codes),
-            skipped=stock_list.skipped_delisted,
+    drift = divergent(entries, args.year)
+    if drift:
+        notice(
+            f"PERINGATAN: {len(drift)} entri katalog berbeda dari pola URL "
+            f"yang diharapkan: {', '.join(drift[:10])}"
+            f"{' ...' if len(drift) > 10 else ''}; URL katalog tetap dipakai",
+            drifted=len(drift),
         )
-        for code in stock_list.codes:
-            if code not in stock_codes:
-                stock_codes.append(code)
 
-    if not stock_codes:
-        parser.error("No stock codes supplied. Gunakan --stocks atau --stocks-file.")
-    return stock_codes
+    progress(
+        f"STEP 0: katalog {args.catalog}: {len(entries)} entri tahun {args.year}",
+        catalog=str(args.catalog),
+        entries=len(entries),
+        year=args.year,
+    )
+    return entries
 
 
 def _as_downloader_error(error: Exception) -> DownloaderError:
@@ -220,23 +225,27 @@ def _failure_reason(
         return f"probe gagal ({type(probe_error).__name__})"
 
 
-def _dry_run(stock_codes: list[str], year: int, download_dir: Path | None) -> int:
+def _dry_run(entries: list[tuple[str, str]], year: int, download_dir: Path | None) -> int:
     """Report what a real run would do, changing nothing.
 
     Reads the history and hashes the files already on disk -- exactly what the
     real path does before it starts -- and stops. No browser, no bridge.
+
+    Takes ``(code, url)`` pairs rather than codes, because the question a
+    dry-run answers is "what would be fetched", and that question is only
+    well-formed against a URL that actually came from somewhere.
     """
     from firefox_bridge.downloader.history import history_entry, load_download_history
     from firefox_bridge.downloader.integrity import file_sha256
-    from firefox_bridge.instance.urls import instance_url, validate_instance_url
+    from firefox_bridge.instance.urls import validate_instance_url
 
     root = instance_download_dir(download_dir)
     history = load_download_history(root)
     would_download = 0
     skipped = 0
 
-    for stock in stock_codes:
-        href = validate_instance_url(instance_url(stock, year), stock, year)
+    for stock, raw_href in entries:
+        href = validate_instance_url(raw_href, stock, year)
         final_path = instance_final_path(stock, year, root)
         recorded = history_entry(history, stock, year, AUDITED_QUARTER)
         recorded_hash = str((recorded or {}).get("sha256") or "")
@@ -296,10 +305,8 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     if args.year is None:
         parser.error("--year wajib diisi")
-    if not args.stocks and not args.stocks_file:
-        parser.error("No stock codes supplied. Gunakan --stocks atau --stocks-file.")
 
-    stock_codes = _collect_stocks(args, parser)
+    entries = _load_catalog(args, parser)
     download_dir = Path(args.download_dir) if args.download_dir else None
     root = instance_download_dir(download_dir)
     delay = _stock_delay(args)
@@ -310,7 +317,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.dry_run:
-        return _dry_run(stock_codes, args.year, download_dir)
+        return _dry_run(entries, args.year, download_dir)
 
     client = FirefoxBridgeClient()
     summary = RunSummary()
@@ -347,9 +354,16 @@ def run(argv: Sequence[str] | None = None) -> int:
     # point -- it must never abort a run that might otherwise still succeed.
     session = IdxSession(client, prompt=prompt_to_solve)
     captcha: str | None = None
+    # Tracked separately from RunSummary because the catalog deserves its own
+    # two numbers: an entry it promised that never arrived, and an entry it
+    # promised that IDX answered404. The second is the impossible one -- it can
+    # only mean the catalog and IDX disagree, which is worth a line nobody has
+    # to go digging for.
+    failed_codes: list[str] = []
+    not_found_codes: list[str] = []
     try:
         session.ensure()
-        for stock in stock_codes:
+        for stock, href in entries:
             # The pause separates requests to IDX; it is not a tax on
             # iterations that make none. True by default, so a failure --
             # which followed a request -- and a real download are both paced;
@@ -360,7 +374,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             pace = True
             try:
                 result = download_instance(
-                    client, stock, args.year, root, session=session,
+                    client, stock, args.year, href, root, session=session,
                 )
             except Exception as error:  # noqa: BLE001
                 failure = _as_downloader_error(error)
@@ -379,17 +393,26 @@ def run(argv: Sequence[str] | None = None) -> int:
                 reason = _failure_reason(session, stock, args.year, failure)
                 detail = f"{failure} | alasan: {reason}"
                 summary.failures.append(f"{stock}: [{kind}] {detail}")
+                failed_codes.append(stock)
+                if NOT_FOUND_REASON in reason:
+                    not_found_codes.append(stock)
                 # Persist the failure with its reason next to the successes:
                 # the JSON history is the resume mechanism and the debugging
                 # record in one. A failure entry carries no file keys, so the
                 # skip logic (file must exist on disk with matching hash) can
                 # never mistake it for a completed download -- the next run
                 # retries it exactly like a stock never attempted.
+                #
+                # The URL recorded is the catalog's, not one this program
+                # built: the 404 it captures has to be reproducible against
+                # the same address the catalog gave, or the next run would
+                # compare a verdict about one URL with a different URL and
+                # ask the question all over again.
                 try:
                     hist = load_download_history(root)
                     record_failure_history(
                         hist, stock, args.year, AUDITED_QUARTER,
-                        instance_url(stock, args.year), kind, reason, root,
+                        href, kind, reason, root,
                     )
                 except Exception as hist_error:  # noqa: BLE001
                     problem(
@@ -426,6 +449,39 @@ def run(argv: Sequence[str] | None = None) -> int:
     finally:
         if captcha is None:
             session.close()
+
+    # The two numbers the catalog exists to make meaningful, printed whether or
+    # not they are zero -- a report that only speaks up on trouble is one you
+    # stop reading.
+    succeeded = {result.stock for result in summary.results}
+    unfinished = [
+        code for code, _ in entries if code not in succeeded and code not in set(failed_codes)
+    ]
+    progress(
+        f"KATALOG: {len(entries)} entri diminta, {len(succeeded)} beres, "
+        f"{len(failed_codes)} gagal"
+        + (f", {len(unfinished)} belum sempat dicoba" if unfinished else ""),
+        requested=len(entries),
+        succeeded=len(succeeded),
+        failed=len(failed_codes),
+        unfinished=len(unfinished),
+    )
+    if unfinished:
+        notice(f"  -> belum beres: {', '.join(unfinished[:20])}", unfinished=len(unfinished))
+    if not_found_codes:
+        problem(
+            f"ANOMALI: {len(not_found_codes)} entri katalog dijawab "
+            f"{NOT_FOUND_REASON} -- katalog bilang ada, IDX bilang tidak: "
+            f"{', '.join(not_found_codes)}",
+            not_found=len(not_found_codes),
+        )
+        problem("  -> kemungkinan katalog basi; jalankan ulang idx_watcher")
+    else:
+        progress(
+            f"KATALOG: 0 entri dijawab {NOT_FOUND_REASON} -- tidak ada yang "
+            "tercatat ada lalu hilang",
+            not_found=0,
+        )
 
     print_run_summary(summary)
     if captcha is not None:

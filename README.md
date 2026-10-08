@@ -136,29 +136,39 @@ The equivalent module form keeps working for existing scripts:
 ## Download audited annual `instance.zip` directly
 
 Where the flow above *finds* report links by driving the IDX year panel, the
-`instance` program *builds* the URL for the audited annual `instance.zip`
-(`/Audit/{TICKER}/instance.zip`, i.e. quarter 4) and downloads it with no page
-interaction. It is a separate program writing under its own root, so its
-`download_history.json` can never collide with the page-driven one — both are
-keyed by stock + year + quarter, which is exactly the collision the separation
-prevents.
+`instance` program takes its list from `db/instance_catalog.json` — the
+archives IDX has actually published, frozen by `idx_watcher` — and downloads
+them with no page interaction. It is a separate program writing under its own
+root, so its `download_history.json` can never collide with the page-driven
+one — both are keyed by stock + year + quarter, which is exactly the collision
+the separation prevents.
+
+The list is not an option here. Earlier versions took `--stocks` /
+`--stocks-file` and *built* every URL from a template — and a template answers
+for any ticker whether or not an archive exists, so the run collected `404`s
+that only meant "our guess was wrong", with a genuine disappearance looking
+identical to one. Reading the catalog means the program only ever asks for
+something that was seen: a `404` on one of these URLs now means the file
+vanished from IDX, and the run ends by saying so as an anomaly.
 
 ```powershell
-.\.venv\Scripts\firefox-bridge-instance.exe --stocks-file db/list_saham.sql --year 2025 --delay 2 --delay-max 5
+# build or refresh the catalog first (must go through the browser; Python gets a 403)
+.\.venv\Scripts\python.exe -m idx_watcher.instance_catalog --source api --api-file C:\path\GetFinancialReport.json
+
+.\.venv\Scripts\firefox-bridge-instance.exe --year 2025 --delay 2 --delay-max 5
 ```
 
-Dry run against the real stock list (writes nothing, needs no bridge):
+Dry run against the real catalog (writes nothing, needs no bridge):
 
 ```powershell
-.\.venv\Scripts\python.exe -m firefox_bridge.instance.cli --stocks-file db/list_saham.sql --year 2025 --dry-run
+.\.venv\Scripts\python.exe -m firefox_bridge.instance.cli --year 2025 --dry-run
 ```
 
 Useful options:
 
 | Option | Meaning |
 | --- | --- |
-| `--stocks-file` | Read codes from a `.sql` dump; delisted rows are excluded. |
-| `--stocks` | Comma separated codes; merged with `--stocks-file` when both are given. |
+| `--catalog` | Catalog JSON. Default `db/instance_catalog.json` — deliberately the same path `idx_watcher` writes, so the command above needs no second argument. |
 | `--year` | Reporting year. |
 | `--delay` / `--delay-max` | Seconds between stocks; with `--delay-max`, uniform random in `[--delay, --delay-max]`. Minimum 1. |
 | `--download-dir` | Download root. Default `$FIREFOX_BRIDGE_INSTANCE_DIR` or `<download root>/instance`. |

@@ -38,6 +38,11 @@ from firefox_bridge.instance.orchestrator import (
 )
 
 YEAR = 2025
+# Every call below fetches NCKL, so the address they fetch is stated once.
+# It is built rather than typed because a literal would rot silently the day
+# the path changes, and a test that fails on a stale string says nothing about
+# the code under test.
+HREF = instance_url("NCKL", YEAR)
 
 
 def _zip_bytes(payload: str) -> bytes:
@@ -154,7 +159,7 @@ def test_valid_entry_is_skipped_without_touching_the_client(instance_root: Path)
     path = _write_report(instance_root, "NCKL")
     _record(instance_root, "NCKL", path)
 
-    result = download_instance(_RefusingClient(), "NCKL", YEAR)
+    result = download_instance(_RefusingClient(), "NCKL", YEAR, HREF)
 
     assert result.skipped
     assert result.quarter == 4
@@ -169,34 +174,45 @@ def test_missing_file_with_a_recorded_entry_downloads(
     _record(instance_root, "NCKL", path)
     path.unlink()
 
-    result = download_instance(_ServingClient(), "NCKL", YEAR)
+    result = download_instance(_ServingClient(), "NCKL", YEAR, HREF)
 
     assert result.downloaded
     assert instance_final_path("NCKL", YEAR, instance_root).is_file()
 
 
-def test_recorded_404_for_the_same_url_is_not_retried(instance_root: Path) -> None:
-    """A verdict the URL already gave must not be asked a second time.
+def test_a_recorded_404_is_retried(instance_root: Path, no_sleep: None) -> None:
+    """A 404 on a catalog URL is an anomaly, not a verdict.
 
-    `_RefusingClient` fails the test on any network call, so the skip is
-    asserted directly rather than inferred from a returned status.
+    `is_definitive_reason` used to retire a stock here for good, on the
+    reasoning that ~3% of the active list had no audited report to fetch. The
+    catalog deleted that population -- it only lists archives that were seen --
+    so the same answer now means "the listed file is gone", and asking once
+    more on the next run is what the exit report is counting.
+
+    It is also the only shape in which the anomaly stays *visible*: a skip is
+    returned as STATUS_SKIPPED, which never reaches the failure list that
+    count is built from. The old rule would have gone silent after the first
+    run and stayed silent forever.
     """
     _record_failure(instance_root, "NCKL", "404 Not Found")
 
-    result = download_instance(_RefusingClient(), "NCKL", YEAR)
+    client = _ServingClient(payload="reappeared")
+    result = download_instance(client, "NCKL", YEAR, HREF)
 
-    assert result.skipped
-    assert not instance_final_path("NCKL", YEAR, instance_root).is_file()
+    assert result.downloaded
+    assert len(client.calls) == 1
 
 
-def test_recorded_404_for_a_different_url_is_retried(
+def test_a_404_recorded_under_a_different_url_is_still_retried(
     instance_root: Path, no_sleep: None
 ) -> None:
-    """Fixing the URL construction voids the verdict that was based on it.
+    """A verdict about one address must not decide a different one.
 
-    Without this, a wrong pattern would be recorded as 404 once and then
-    skipped forever -- the verdict outliving the thing it judged, with no
-    reset step to recover from.
+    The catalog is fetched by hand and can be rebuilt, so the address for a
+    stock may legitimately change between runs. Carrying the old answer
+    forward would be deciding the new address on the old one's behalf, with
+    no reset step to recover from it -- and now that nothing skips on a 404
+    at all, the property has to hold for both shapes of mismatch.
     """
     _record_failure(
         instance_root,
@@ -206,7 +222,7 @@ def test_recorded_404_for_a_different_url_is_retried(
     )
 
     client = _ServingClient(payload="repaired")
-    result = download_instance(client, "NCKL", YEAR)
+    result = download_instance(client, "NCKL", YEAR, HREF)
 
     assert result.downloaded
     assert len(client.calls) == 1
@@ -224,7 +240,7 @@ def test_a_condition_is_retried_even_when_it_is_already_recorded(
     _record_failure(instance_root, "NCKL", "200 (file exists; downloads.download failed)")
 
     client = _ServingClient()
-    result = download_instance(client, "NCKL", YEAR)
+    result = download_instance(client, "NCKL", YEAR, HREF)
 
     assert result.downloaded
     assert len(client.calls) == 1
@@ -239,7 +255,7 @@ def test_hash_mismatch_triggers_a_redownload(
     assert file_sha256(path) != _recorded_hash(instance_root, "NCKL")
 
     client = _ServingClient(payload="repaired")
-    result = download_instance(client, "NCKL", YEAR)
+    result = download_instance(client, "NCKL", YEAR, HREF)
 
     assert result.downloaded
     assert len(client.calls) == 1
@@ -261,7 +277,7 @@ def test_unrecorded_file_is_skipped_and_the_history_is_completed(
     path = _write_report(instance_root, "NCKL")
     assert not (instance_root / "saham" / "download_history.json").exists()
 
-    result = download_instance(_RefusingClient(), "NCKL", YEAR)
+    result = download_instance(_RefusingClient(), "NCKL", YEAR, HREF)
 
     assert result.skipped
     entry = load_download_history(instance_root)["downloads"]["NCKL"][str(YEAR)]["4"]
@@ -287,8 +303,8 @@ def test_a_second_run_skips_instead_of_downloading_twice(
     """The anti-duplicate property, end to end."""
     first_client = _ServingClient(payload="once")
 
-    first = download_instance(first_client, "NCKL", YEAR)
-    second = download_instance(_RefusingClient(), "NCKL", YEAR)
+    first = download_instance(first_client, "NCKL", YEAR, HREF)
+    second = download_instance(_RefusingClient(), "NCKL", YEAR, HREF)
 
     assert first.downloaded
     assert second.skipped
@@ -472,7 +488,7 @@ def test_a_blocked_download_refreshes_the_session(
     session = _RecordingSession()
 
     with pytest.raises(DownloadTimeout) as caught:
-        download_instance(client, "NCKL", YEAR, session=session)
+        download_instance(client, "NCKL", YEAR, HREF, session=session)
 
     assert client.calls  # tried at least once
     assert session.refreshes == 2  # on_retry fires before attempts 2 and 3
@@ -499,7 +515,7 @@ def test_a_404_answer_ends_the_retries_after_a_single_attempt(
     session = _RecordingSession(probe_reason="404 Not Found")
 
     with pytest.raises(DownloadTimeout):
-        download_instance(client, "NCKL", YEAR, session=session)
+        download_instance(client, "NCKL", YEAR, HREF, session=session)
 
     assert len(client.calls) == 1, "a definitive 404 was asked for again"
     assert session.refreshes == 0, "the session was warmed for a URL that is gone"
@@ -519,7 +535,7 @@ def test_the_reason_that_ended_the_retries_rides_on_the_error(
     session = _RecordingSession(probe_reason="404 Not Found")
 
     with pytest.raises(DownloadTimeout) as caught:
-        download_instance(client, "NCKL", YEAR, session=session)
+        download_instance(client, "NCKL", YEAR, HREF, session=session)
 
     assert caught.value.archive_reason == "404 Not Found"
 
@@ -544,7 +560,7 @@ def test_a_probe_that_cannot_run_never_stops_the_retries(
     session = _BlindSession()
 
     with pytest.raises(DownloadTimeout) as caught:
-        download_instance(client, "NCKL", YEAR, session=session)
+        download_instance(client, "NCKL", YEAR, HREF, session=session)
 
     assert len(client.calls) == RETRY_ATTEMPTS, "an unread probe stopped the retries"
     assert session.refreshes == RETRY_ATTEMPTS - 1
@@ -562,7 +578,7 @@ def test_a_corrupt_download_is_not_treated_as_a_blocked_one(
     session = _RecordingSession()
 
     with pytest.raises(IntegrityError):
-        download_instance(client, "NCKL", YEAR, session=session)
+        download_instance(client, "NCKL", YEAR, HREF, session=session)
 
     assert session.refreshes == 0
     # A file that arrived (badly) already answers "is the URL there?" -- the

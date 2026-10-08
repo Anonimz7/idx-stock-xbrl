@@ -52,7 +52,7 @@ from .paths import (
     instance_staging_relative_filename,
 )
 from .session import IdxSession, is_definitive_reason
-from .urls import AUDITED_QUARTER, instance_url, validate_instance_url
+from .urls import AUDITED_QUARTER, validate_instance_url
 
 # How long an absent staging path may stay absent before the download is judged
 # dead. See `_await_archive` for why absence is treated as proof rather than as
@@ -239,10 +239,19 @@ def download_instance(
     client: FirefoxBridgeClient,
     stock: str,
     year: int,
+    href: str,
     download_dir: Path | None = None,
     session: IdxSession | None = None,
 ) -> DownloadResult:
     """Download one audited instance.zip, or skip it when it is already valid.
+
+    ``href`` is required and is never built here: it arrives from the catalog,
+    which only lists archives IDX has actually published. Constructing one
+    would put this function back in the guessing business -- a template
+    answers for every (stock, year), so a 404 could never be distinguished
+    from "no such report". The URL is still validated before it is fetched,
+    which is what stops a wrong catalog entry from being filed under the right
+    folder.
 
     A recorded-but-missing file and a hash mismatch both lead to a fresh
     download; only an existing file whose hash still matches is skipped.
@@ -258,7 +267,7 @@ def download_instance(
     """
     code = normalize_stock_code(stock)
     root = instance_download_dir(download_dir)
-    href = validate_instance_url(instance_url(code, year), code, year)
+    href = validate_instance_url(href, code, year)
 
     history = load_download_history(root)
     final_path = instance_final_path(code, year, root)
@@ -296,34 +305,28 @@ def download_instance(
                 code, year, href, final_path, history, STATUS_SKIPPED,
             )
 
-    # A recorded 404 for this exact URL is a verdict, not a condition, and it
-    # has to survive the end of the run. `is_definitive_reason` already says no
-    # retry could change it; discarding that at exit is what made every run
-    # spend another fifteen seconds to hear the same answer again while
-    # `fail_count` climbed and nothing ever read it.
+    # A recorded 404 for this URL used to end the matter here. The old list was
+    # a list of *guesses* -- a template answered for any (stock, year) -- so
+    # roughly 3% of the active stocks had no audited report at all, and asking
+    # each of them again cost three attempts, two refreshes and two backoffs to
+    # hear the same answer. The catalog removed that population: it only holds
+    # archives that were seen, so a 404 no longer means "there is no such
+    # report" but "the file that was listed is gone". That is worth one more
+    # ask on the next run rather than a verdict to retire the stock on.
     #
-    # Keyed on the URL so the verdict cannot outlive what it judged: fixing the
-    # construction changes `href`, the comparison fails, and the stock is asked
-    # again on its own -- no reset step, no stale verdict to remember. Every
-    # other answer falls through to the retry below, which is exactly what lets
-    # a CAPTCHA-damaged "200 (file exists...)" be asked a second time.
-    if (
-        recorded is not None
-        and not integrity_failed
-        and recorded.get("url") == href
-        and is_definitive_reason(str(recorded.get(REASON_KEY) or ""))
-    ):
-        progress(
-            f"STEP SKIP: instance {code} {year} sudah dijawab "
-            f"{recorded.get(REASON_KEY)} untuk URL yang sama; tidak diulang",
-            stock=code,
-            year=year,
-        )
-        return _make_result(code, year, href, final_path, history, STATUS_SKIPPED)
-
+    # Dropping the skip is also what keeps the exit report honest. A skip comes
+    # back as STATUS_SKIPPED, which never reaches the failure list the anomaly
+    # count is built from -- leaving the old rule in place would have made the
+    # second run go silent about the one thing that report exists to name.
+    #
+    # Nothing is lost by asking again: the reason was already written to the
+    # history when it was first found, and it is overwritten with the same
+    # answer if it is still true. Only the "never again" is gone.
     if recorded is not None and not integrity_failed:
+        reason = str(recorded.get(REASON_KEY) or "")
+        what = f"tercatat gagal ({reason})" if reason else "tercatat sukses, tetapi file hilang"
         notice(
-            f"WARN: JSON mencatat instance {code} {year}, tetapi file hilang; mengunduh ulang",
+            f"WARN: instance {code} {year} {what}; mengunduh ulang",
             stock=code,
             year=year,
         )

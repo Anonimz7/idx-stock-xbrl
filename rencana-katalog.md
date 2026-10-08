@@ -326,10 +326,13 @@ diandalkan.
 ```
 0. Selesaikan run 785              ← SELESAI 8 Okt: 785/785, 723 unduh + 62 gagal 404
 1. Cocokkan kode 404 vs katalog    ← SELESAI 8 Okt: 0 dari 62 ada di API
-2. Endpoint `evaluate` di bridge   ← masih RENCANA (tak wajib, lihat Langkah 3)
-3. Mode `--source api` di watcher  ← katalog jadi murah
-4. Downloader membaca katalog      ← metode baru aktif
+2. Endpoint `evaluate` di bridge   ← GUGUR 8 Okt (tak wajib, lihat Langkah 3)
+3. Mode `--source api` di watcher  ← SELESAI 8 Okt: 890 entri, setara katalog halaman
+4. Downloader membaca katalog      ← SELESAI 8 Okt: --catalog menggantikan --stocks-file
 ```
+
+Empat dari lima baris di atas sudah selesai, satu gugur — **tidak ada lagi
+yang mengantre.**
 
 **Jangan mengerjakan langkah 2 sebelum langkah 0 selesai.** Menambah endpoint
 `evaluate` mengubah ekstensi, dan ekstensi yang diubah wajib di-*reload* di
@@ -407,8 +410,16 @@ belakang langkah ini ikut gugur, keduanya sudah dihapus dari teks:
 - **Versi ekstensi 0.1.8 → naik** — moot. `extension/` tidak disentuh,
   jadi langkah verifikasi `task.md` §13 tidak perlu diulang.
 
-Satu-satunya `[PERLU KEPUTUSAN]` yang masih hidup ada di Langkah 4
-(--catalog menggantikan `--stocks-file` atau berdampingan).
+Semua `[PERLU KEPUTUSAN]` kini sudah terjawab. Dua di atas gugur bersama
+Langkah 2; satu lagi di Langkah 4 dijawab pemilik pada 8 Okt 2026 dengan
+**menggantikan sepenuhnya** — `--stocks` / `--stocks-file` dicabut dari
+program instance, `--catalog` menjadi satu-satunya sumber daftar.
+
+Satu koreksi atas yang tertulis di sini: Langkah 4 tidak menyentuh
+`task.md` §6. Setelah diperiksa, `task.md` tidak pernah menyebut `instance`
+— CLI-004 menerangkan `firefox-bridge-download` (yang memang menerima
+`--stocks` / `--stocks-file` lewat config file), dan program itu tidak
+diubah. Kontrak yang berubah tidak tercatat di task.md, hanya di README.
 
 Sisa desain endpoint dipertahankan di riwayat git bila suatu saat
 dibutuhkan lagi; tidak ada pekerjaan yang hilang, hanya ditunda.
@@ -472,33 +483,50 @@ kesetaraan, bukan sekadar "tidak error". 19 tes baru mengunci kontraknya.
 file, exit 0** (naik dari 612); ruff **14** dan mypy gate **6** — persis
 baseline, nol dari file yang disentuh; `mypy idx_watcher` **Success**.
 
-### Langkah 4 — downloader membaca katalog [RENCANA]
+### Langkah 4 — downloader membaca katalog [SELESAI 8 Okt 2026]
 
-Saat ini `firefox_bridge/instance/cli.py` menerima `--stocks-file`, lalu URL
-disusun sendiri. Tambahkan:
+`firefox_bridge/instance/cli.py` tidak lagi menerima `--stocks` /
+`--stocks-file`. Daftar datang dari `--catalog`, default
+`db/instance_catalog.json` — path yang sama dengan yang ditulis `idx_watcher`,
+sehingga perintah tanpa argumen pun menemukannya.
 
-```
---catalog db/instance_catalog.json
-```
+Butir per butir terhadap rencana awal:
 
-Perilaku bila `--catalog` ada:
+1. **Entri tahun yang diminta menjadi pekerjaannya** — lewat modul baru
+   `firefox_bridge/instance/catalog.py`, `load_entries()` mengembalikan
+   `(kode, url)` terurut. Terurut karena katalog berbentuk dict, jadi
+   urutannya ikut urutan merge yang berubah tiap scan; jalur yang stabil
+   membuat run lanjutan terbaca sama dengan run yang ia lanjutkan.
+2. **Aturan anti-duplikat tidak berubah** — file + hash + entri history.
+3. **`entry["url"]` dipakai apa adanya.** `download_instance()` kini
+   menerima `href` sebagai parameter **wajib** posisi keempat dan tidak
+   lagi pernah membangun URL. Vektor tebaknya ditutup di tandatangan, bukan
+   di komentar: parameter berarti default, dan pemanggil yang lupa akan
+   diam-diam kembali menebak sambil tetap lolos tes.
+4. **404 = anomali.** Blok `is_definitive_reason` yang dulu memensiunkan
+   saham dihapus. Alasannya sudah tidak ada: aturan itu dibuat untuk "3%
+   daftar tidak punya laporan", dan populasi itulah yang dihapus katalog
+   (890/890 ada). Dampaknya dua. Pertama, 404 ditanya ulang pada run
+   berikutnya. Kedua — yang tidak kalah penting — **laporan anomali tetap
+   hidup**: skip dikembalikan sebagai `STATUS_SKIPPED` yang tak pernah
+   masuk daftar kegagalan, jadi aturan lama membuat run kedua dan
+   seterusnya *diam* tentang satu-satunya hal yang memang harus ia
+   laporkan.
+5. **Dua angka di akhir run** — `KATALOG: N entri diminta, X beres, Y
+   gagal`, ditambah `ANOMALI: n entri katalog dijawab 404 Not Found` bila
+   ada. Nol pun tetap dicetak: laporan yang hanya bicara saat ada masalah
+   adalah laporan yang berhenti dibaca.
 
-1. Ambil entri `f"{tahun}|{KODE}"` untuk tahun yang diminta → pekerjaan =
-   daftar entri tersebut (bukan `--stocks-file`).
-2. Lewati yang sudah terverifikasi di `download_history.json` (aturan ini
-   tidak berubah — tetap dasar anti-duplikat).
-3. Unduh `entry["url"]` **apa adanya** — tidak ada konstruksi URL.
-4. **404 di atas URL katalog = anomali nyata.** `is_definitive_reason`
-   tidak lagi cukup memperlakukannya sebagai "berhenti, tidak ada laporan";
-   ia harus tercatat sebagai kegagalan yang layak diulang/diselediki.
-5. Laporan akhir run wajib menampilkan dua angka ini:
-   - entri katalog yang tidak berhasil diunduh (dan alasannya)
-   - 404 yang terjadi **di atas URL katalog** (keadaan mustahil = bug)
+**Keputusan pemilik**: *menggantikan sepenuhnya*. `--stocks` /
+`--stocks-file` dicabut dari program instance. `task.md` §6 ternyata tidak
+perlu diubah — setelah diperiksa, `task.md` tidak pernah menyebut
+`instance` sama sekali; CLI-004 menerangkan `firefox-bridge-download`,
+yang tidak disentuh (lihat koreksi di §3 atas).
 
-**Tentukan dulu [PERLU KEPUTUSAN]**: apakah `--catalog` menggantikan
-`--stocks-file` atau menjadi alternatif keduanya (salah satu wajib diisi)?
-Keputusan ini memengaruhi kontrak CLI yang sudah dianggap stabil di
-`task.md` §6 "CLI Profesional".
+**Bukti**: `--dry-run` terhadap katalog sungguhan menghasilkan
+`890 entri tahun 2025` → `0 akan diunduh, 890 dilewati`, tanpa peringatan
+drift (890/890 URL katalog cocok dengan pola terbitan `instance_url`).
+643 tes lulus; ruff 0 pada file yang disentuh; mypy 6 (baseline).
 
 ---
 
@@ -600,6 +628,7 @@ commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
 .venv\Scripts\python.exe -m pytest -q                 # seluruh suite, hijau
 .venv\Scripts\python.exe -m pytest --collect-only -q   # ringkasan per file, untuk menghitung jumlah tes
 .venv\Scripts\python.exe -m ruff check idx_watcher tests/test_idx_watcher_instance_catalog.py
+.venv\Scripts\python.exe -m ruff check firefox_bridge/instance tests/test_instance_*.py
 .venv\Scripts\python.exe -m ruff check .              # 14 error pre-existing
 .venv\Scripts\python.exe -m mypy                      # 6 error pre-existing (ini gate-nya)
 .venv\Scripts\python.exe -m mypy idx_watcher tests/test_idx_watcher_instance_catalog.py
@@ -612,8 +641,8 @@ commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
 
 | Gate | Nilai | Catatan |
 | --- | --- | --- |
-| pytest | hijau | **631 tes** di 36 file (42 di antaranya milik `idx_watcher`); 612 saat baseline 8 Okt pagi, 588 saat baseline 7 Okt |
-| ruff file baru | **0** | wajib tetap 0 |
+| pytest | hijau | **643 tes** di 37 file (42 di antaranya milik `idx_watcher`); 631 sebelum Langkah 4, 612 saat baseline 8 Okt pagi, 588 saat baseline 7 Okt |
+| ruff file baru | **0** | wajib tetap 0 — kini juga `instance/catalog.py` dan `tests/test_instance_catalog.py` |
 | ruff penuh | **14** | pre-existing (`cli.py`, `client.py`, `session.py`, `rest_manager.py`, 3 file tes). Turun dari baseline 17 karena 3 error ikut terhapus bersama `announcement_watcher.py` |
 | mypy gate | **6** | pre-existing di `firefox_bridge/cli.py`. Tidak boleh naik |
 | mypy `idx_watcher` | **0** | Success; menangkap `int(raw_year)` yang bertipe `Any \| None` saat Langkah 3 ditulis |
@@ -627,8 +656,13 @@ commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
       62 gagal `404 Not Found`, 0 folder kosong, 0 file tersisa di staging**
 - [x] Kode 404 sudah dicek terhadap katalog, hasilnya didokumentasikan
       (§3 langkah 1) — **62/62 tidak ada di API; 890/890 URL identik**
-- [ ] Mode `--catalog` menolak mengunduh di luar katalog, dan 404 di atas
-      URL katalog dilaporkan sebagai anomali, bukan "tidak ada laporan"
+- [x] Mode `--catalog` menolak mengunduh di luar katalog, dan 404 di atas
+      URL katalog dilaporkan sebagai anomali, bukan "tidak ada laporan" —
+      **8 Okt: `--stocks` / `--stocks-file` dicabut, `href` jadi parameter
+      wajib `download_instance()` sehingga jalur unduh tidak punya cara
+      membangun URL; blok `is_definitive_reason` dihapus agar 404 ditanya
+      ulang dan tetap terhitung di laporan; `--dry-run` katalog sungguhan
+      890/890 dilewati tanpa drift**
 - [x] `--source api` berjalan dan **setara** dengan katalog halaman —
       **8 Okt: `--source api --dry-run` melapor 890 dibaca / 0 baru /
       0 berubah** terhadap katalog berisi 890 entri. 19 tes mengunci
@@ -641,8 +675,9 @@ commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
 - [ ] Endpoint `evaluate` — **GUGUR** (langkah 2 dibatalkan, pemilik memilih
       membaca file unduhan manual). Dicoret sebagai hal yang tidak perlu
       dikerjakan, bukan sebagai selesai.
-- [ ] Gate §5 tidak bergerak ke arah yang salah — **gerbang 8 Okt: 631 tes,
-      ruff 14, mypy 6, mypy idx_watcher 0; tidak bergerak.**
+- [x] Gate §5 tidak bergerak ke arah yang salah — **gerbang 8 Okt setelah
+      Langkah 4: 643 tes, ruff 14, mypy 6, mypy idx_watcher 0; tidak
+      bergerak.**
 - [ ] Ekstensi 0.1.9 diverifikasi ulang — **tidak berlaku**, ekstensi tidak
       berubah (masih 0.1.8), langkah ini ikut gugur bersama langkah 2.
 

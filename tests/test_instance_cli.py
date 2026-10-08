@@ -10,6 +10,7 @@ running them in one pass.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pytest
@@ -31,10 +32,32 @@ from firefox_bridge.instance.cli import (
     build_parser,
     run,
 )
+from firefox_bridge.instance.urls import instance_url
+
+
+def _catalog(tmp_path: Path, codes: list[str], year: int = 2025) -> Path:
+    """Write a minimal catalog holding exactly ``codes`` for ``year``.
+
+    The shape is the one ``idx_watcher`` freezes -- a ``year|CODE`` key over a
+    record of ticker, year and URL -- and only those three fields are written,
+    because only those three are read. A fixture padding the record with extra
+    keys would be asserting its own padding rather than the reader.
+
+    The URLs come from ``instance_url`` so the normal case looks like the real
+    one; tests that need to tell a catalog URL from a built one pass their own
+    instead.
+    """
+    entries = {
+        f"{year}|{code}": {"ticker": code, "year": year, "url": instance_url(code, year)}
+        for code in codes
+    }
+    path = tmp_path / "instance_catalog.json"
+    path.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+    return path
 
 
 def _parse(*argv: str) -> argparse.Namespace:
-    return build_parser().parse_args(["--stocks", "NCKL", "--year", "2025", *argv])
+    return build_parser().parse_args(["--year", "2025", *argv])
 
 
 def test_an_unset_delay_falls_back_to_the_shared_default() -> None:
@@ -119,31 +142,103 @@ def test_dry_run_creates_no_file(
 
     Pointed at an empty root so the assertion is about this run rather than about
     whatever a developer already has in their download folder.
+
+    Compared before and after rather than against an empty directory: the
+    catalog itself has to live somewhere, and a test that assumed a bare
+    ``tmp_path`` would have to put it outside the tree it is checking.
     """
     root = tmp_path / "instance"
     monkeypatch.setenv("FIREFOX_BRIDGE_INSTANCE_DIR", str(root))
     monkeypatch.delenv("FIREFOX_BRIDGE_DOWNLOAD_DIR", raising=False)
+    catalog = _catalog(tmp_path, ["NCKL", "BBCA"])
 
-    exit_code = run(["--stocks", "NCKL,BBCA", "--year", "2025", "--dry-run"])
+    before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    exit_code = run(["--catalog", str(catalog), "--year", "2025", "--dry-run"])
+    after = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
 
     assert exit_code == 0
+    assert after == before, "dry-run menulis atau menghapus sesuatu"
     assert not root.exists()
-    assert list(tmp_path.iterdir()) == []
 
 
 def test_a_year_is_required() -> None:
     """Omitted options are caught before the browser is ever touched."""
     with pytest.raises(SystemExit) as caught:
-        run(["--stocks", "NCKL"])
+        run([])
 
     assert caught.value.code == 2
 
 
-def test_stocks_are_required() -> None:
+def test_a_missing_catalog_is_a_usage_error(tmp_path: Path) -> None:
+    """The list is not optional any more, so a bad path must fail like one.
+
+    Exit 2, not 1: "you pointed me at nothing" and "a download failed" cannot
+    look the same to a caller, and this one is the caller's to fix.
+    """
+    missing = tmp_path / "no_such_catalog.json"
+
     with pytest.raises(SystemExit) as caught:
-        run(["--year", "2025"])
+        run(["--catalog", str(missing), "--year", "2025"])
 
     assert caught.value.code == 2
+
+
+def test_the_run_fetches_the_catalog_url_not_a_built_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The address comes from the file, and nothing along the way rebuilds it.
+
+    A template answers for every ``(stock, year)`` there is, so a run built on
+    one cannot tell "IDX moved the file" from "there was never a file" -- both
+    come back as the same 404. Reading the URL out of the catalog is what makes
+    a 404 a fact about IDX instead of a fact about our guess, and the whole
+    arrangement holds only if the value survives to the fetch untouched.
+
+    The URL below deliberately does not match the published shape, so this
+    fails if any layer silently reconstructs it -- which is the one thing that
+    would quietly turn the catalog back into a guess.
+    """
+    monkeypatch.setenv("FIREFOX_BRIDGE_DOWNLOAD_DIR", str(tmp_path / "downloads"))
+    monkeypatch.setenv("FIREFOX_BRIDGE_INSTANCE_DIR", str(tmp_path / "instance"))
+    monkeypatch.setattr(cli_module, "ensure_extension_ready", lambda _client: "v-test")
+    monkeypatch.setattr(cli_module, "IdxSession", _QuietSession)
+
+    catalog_url = "https://www.idx.co.id/Portals/0/katalog-baru/NCKL/instance.zip"
+    assert catalog_url != instance_url("NCKL", 2025), "sudah sama, tes jadi kosong"
+    path = tmp_path / "instance_catalog.json"
+    path.write_text(
+        json.dumps(
+            {"entries": {"2025|NCKL": {"ticker": "NCKL", "year": 2025, "url": catalog_url}}}
+        ),
+        encoding="utf-8",
+    )
+
+    seen: list[tuple[str, str]] = []
+
+    def _capture(
+        client: object,
+        stock: str,
+        year: int,
+        href: str,
+        download_dir: object = None,
+        session: object = None,
+    ) -> DownloadResult:
+        seen.append((stock, href))
+        return DownloadResult(
+            stock=stock,
+            href=href,
+            filename=f"{stock}_instance_T4_{year}.zip",
+            status=STATUS_DOWNLOADED,
+            year=year,
+            quarter=4,
+        )
+
+    monkeypatch.setattr(cli_module, "download_instance", _capture)
+
+    exit_code = run(["--catalog", str(path), "--year", "2025"])
+
+    assert exit_code == EXIT_SUCCESS, "tes gagal di titik yang tidak sedang diuji"
+    assert seen == [("NCKL", catalog_url)], "URL yang diunduh bukan URL katalog"
 
 
 def test_a_captcha_stops_the_run_with_its_own_exit_code(
@@ -180,7 +275,7 @@ def test_a_captcha_stops_the_run_with_its_own_exit_code(
 
     monkeypatch.setattr(cli_module, "IdxSession", _BlockedSession)
 
-    exit_code = run(["--stocks", "NCKL", "--year", "2025"])
+    exit_code = run(["--catalog", str(_catalog(tmp_path, ["NCKL"])), "--year", "2025"])
 
     assert exit_code == EXIT_CAPTCHA
     assert not closed, "tab ditutup, jadi kotaknya hilang dari layar operator"
@@ -228,6 +323,7 @@ def _paced_run(
         client: object,
         stock: str,
         year: int,
+        href: str,
         download_dir: object = None,
         session: object = None,
     ) -> DownloadResult:
@@ -236,7 +332,7 @@ def _paced_run(
         status = STATUS_SKIPPED if outcomes[stock] == "skip" else STATUS_DOWNLOADED
         return DownloadResult(
             stock=stock,
-            href=f"https://example.invalid/{stock}.zip",
+            href=href,
             filename=f"{stock}_instance_T4_{year}.zip",
             status=status,
             year=year,
@@ -253,8 +349,8 @@ def _paced_run(
 
     exit_code = run(
         [
-            "--stocks",
-            ",".join(outcomes),
+            "--catalog",
+            str(_catalog(tmp_path, list(outcomes))),
             "--year",
             "2025",
             "--delay",
