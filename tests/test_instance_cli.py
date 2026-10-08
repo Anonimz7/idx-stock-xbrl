@@ -28,6 +28,7 @@ from firefox_bridge.instance.cli import (
     EXIT_FAILURES,
     EXIT_SUCCESS,
     _failure_reason,
+    _parse_stock_codes,
     _stock_delay,
     build_parser,
     run,
@@ -58,6 +59,14 @@ def _catalog(tmp_path: Path, codes: list[str], year: int = 2025) -> Path:
 
 def _parse(*argv: str) -> argparse.Namespace:
     return build_parser().parse_args(["--year", "2025", *argv])
+
+
+def test_parse_stock_codes_normalises_and_dedupes() -> None:
+    """Mirror of the page CLI: reject ../, normalise case, dedupe, keep order."""
+    assert _parse_stock_codes(" nckl , BBCA ,nckl, ") == ["NCKL", "BBCA"]
+    assert _parse_stock_codes(" , ,") == []
+    with pytest.raises(argparse.ArgumentTypeError):
+        _parse_stock_codes("../etc")
 
 
 def test_an_unset_delay_falls_back_to_the_shared_default() -> None:

@@ -137,6 +137,16 @@ def build_parser() -> argparse.ArgumentParser:
             "the URLs are built rather than read from a page."
         ),
     )
+    parser.add_argument(
+        "--codes",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated stock codes to download, e.g. AADI,BBCA. "
+            "Default: every code in the catalog for --year. Lets a trial run "
+            "fetch a handful of reports without downloading the whole year."
+        ),
+    )
     return parser
 
 
@@ -300,6 +310,28 @@ def _stock_delay(args: argparse.Namespace) -> float:
     return runconfig.DEFAULT_DELAY_SECONDS if args.delay is None else args.delay
 
 
+def _parse_stock_codes(raw: str) -> list[str]:
+    """Normalise & de-duplicate comma-separated codes.
+
+    Mirrors ``parse_stock_codes`` in the page CLI: each code becomes a folder
+    name, so ``../`` is rejected here -- the cheapest place -- with an exit
+    code the caller can tell apart from a download failure. Kept local (not
+    imported from the page CLI) so the instance program stays free of the
+    page scan stack it deliberately does not use.
+    """
+    codes: list[str] = []
+    for item in raw.split(","):
+        if not item.strip():
+            continue
+        try:
+            code = normalize_stock_code(item)
+        except ValidationError as error:
+            raise argparse.ArgumentTypeError(str(error)) from error
+        if code not in codes:
+            codes.append(code)
+    return codes
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """Execute one CLI run and return its exit code."""
     parser = build_parser()
@@ -309,6 +341,24 @@ def run(argv: Sequence[str] | None = None) -> int:
         parser.error("--year wajib diisi")
 
     entries = _load_catalog(args, parser)
+
+    if args.codes:
+        requested = _parse_stock_codes(args.codes)
+        seen = {code for code, _url in entries}
+        missing = [c for c in requested if c not in seen]
+        if missing:
+            parser.error(
+                f"kode tidak ada di katalog {args.year}: {', '.join(missing)}"
+            )
+        wanted = set(requested)
+        entries = [(c, u) for c, u in entries if c in wanted]
+        progress(
+            f"FILTER: {args.codes} -> {len(entries)} dari {len(seen)} entri katalog {args.year}",
+            filtered=len(entries),
+            total=len(seen),
+            year=args.year,
+        )
+
     download_dir = Path(args.download_dir) if args.download_dir else None
     root = instance_download_dir(download_dir)
     delay = _stock_delay(args)
