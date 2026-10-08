@@ -240,7 +240,7 @@ def _api_doc(*rows: dict) -> dict:
 
 class TestEntriesFromApi:
     def test_extracts_key_url_and_upload_time(self) -> None:
-        found = entries_from_api(_api_doc(_api_row()))
+        found, _ = entries_from_api(_api_doc(_api_row()))
         entry = found["2025|AADI"]
         assert entry["ticker"] == "AADI"
         assert entry["year"] == 2025
@@ -249,13 +249,13 @@ class TestEntriesFromApi:
         assert entry["url"].endswith("/Laporan%20Keuangan%20Tahun%202025/Audit/AADI/instance.zip")
 
     def test_spaces_are_percent_encoded_like_the_page(self) -> None:
-        found = entries_from_api(_api_doc(_api_row()))
+        found, _ = entries_from_api(_api_doc(_api_row()))
         # bentuk halaman memakai %20, bukan spasi mentah
         assert " " not in found["2025|AADI"]["url"]
         assert "%20" in found["2025|AADI"]["url"]
 
     def test_picks_instance_zip_and_ignores_the_rest(self) -> None:
-        found = entries_from_api(
+        found, _ = entries_from_api(
             _api_doc(
                 _api_row(
                     attachments=[
@@ -268,20 +268,35 @@ class TestEntriesFromApi:
         )
         assert found["2025|AADI"]["url"] == "https://www.idx.co.id/wanted/instance.zip"
 
-    def test_row_without_instance_zip_is_rejected(self) -> None:
+    def test_row_without_instance_zip_is_skipped_not_fatal(self) -> None:
+        """Satu baris tanpa arsip tidak berhak mematikan baris lain.
+
+        BINA 2024 hanya punya PDF di IDX; 884 baris lain file itu lengkap.
+        """
+        found, skipped = entries_from_api(
+            _api_doc(
+                _api_row("AADI"),
+                _api_row("BINA", attachments=[{"File_Name": "a.pdf", "File_Path": "/x"}]),
+            )
+        )
+        assert set(found) == {"2025|AADI"}
+        assert skipped == ["BINA 2025"]
+
+    def test_a_document_without_any_instance_zip_is_rejected(self) -> None:
+        """Nol entri berarti file ini bukan respons GetFinancialReport."""
         with pytest.raises(CatalogError, match="instance.zip"):
             entries_from_api(
                 _api_doc(_api_row(attachments=[{"File_Name": "a.pdf", "File_Path": "/x"}]))
             )
 
     def test_readies_several_rows(self) -> None:
-        found = entries_from_api(
+        found, _ = entries_from_api(
             _api_doc(_api_row("AADI"), _api_row("ZONE"), _api_row("ZYRX"))
         )
         assert set(found) == {"2025|AADI", "2025|ZONE", "2025|ZYRX"}
 
     def test_period_comes_from_data_not_from_a_label(self) -> None:
-        found = entries_from_api(_api_doc(_api_row(period="TW1")))
+        found, _ = entries_from_api(_api_doc(_api_row(period="TW1")))
         assert found["2025|AADI"]["period"] == "tw1"
 
     def test_document_that_is_not_an_object_is_rejected(self) -> None:
@@ -323,6 +338,22 @@ class TestImportFromApi:
         totals, added, changed = import_from_api(catalog, args, "2026-10-08T10:00:00+07:00")
         assert (totals, added, changed) == (1, 1, 0)
         assert catalog["entries"]["2025|AADI"]["first_seen"] == "2026-10-08T10:00:00+07:00"
+
+    def test_a_skipped_row_is_reported_in_the_log(self, tmp_path, capsys) -> None:
+        """Baris yang dilewati harus terlihat, bukan hilang diam-diam."""
+        catalog: dict = {}
+        args = self._args(
+            tmp_path,
+            _api_doc(
+                _api_row("AADI"),
+                _api_row("BINA", attachments=[{"File_Name": "a.pdf", "File_Path": "/x"}]),
+            ),
+        )
+        totals, added, _ = import_from_api(catalog, args, "2026-10-08T10:00:00+07:00")
+        assert (totals, added) == (1, 1)
+        assert set(catalog["entries"]) == {"2025|AADI"}
+        out = capsys.readouterr().out
+        assert "lewati BINA 2025: tidak ada instance.zip di Attachments" in out
 
     def test_second_import_only_touches_last_seen(self, tmp_path) -> None:
         catalog: dict = {}

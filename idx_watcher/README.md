@@ -17,15 +17,22 @@ https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan/
 
 ```bash
 # dari productions/, dengan bridge Firefox sudah berjalan
-.venv\Scripts\python.exe -m idx_watcher.instance_catalog                 # semua tahun
-.venv\Scripts\python.exe -m idx_watcher.instance_catalog --years 2025    # satu tahun
-.venv\Scripts\python.exe -m idx_watcher.instance_catalog --years 2025,2026 --dry-run
+.venv\Scripts\python.exe -m idx_watcher.instance_catalog                       # semua tahun via halaman
+.venv\Scripts\python.exe -m idx_watcher.instance_catalog --years 2025          # satu tahun via halaman
+.venv\Scripts\python.exe -m idx_watcher.instance_catalog --source api \
+        --api-file C:/Users/kamu/Downloads/GetFinancialReport2025.json          # satu tahun via API
+.venv\Scripts\python.exe -m idx_watcher.instance_catalog --source api \
+        --api-file C:/Users/kamu/Downloads/GetFinancialReport2024.json --dry-run
 ```
+
+Setiap tahun ditulis ke berkas tersendiri (`instance_catalog_<tahun>.json`).
+Tahun yang sudah selesai tidak disentuh run tahun lain — `updated_at` dan `source`
+sebuah berkas cuma berubah bila entri tahun itu sendiri berubah.
 
 | Opsi | Arti |
 | --- | --- |
 | `--years 2025,2026` | tahun yang dipindai; default semua tahun yang ditawarkan halaman |
-| `--output PATH` | katalog tujuan (default `db/instance_catalog.json`) |
+| `--output DIR` | direktori katalog; satu berkas `instance_catalog_<tahun>.json` per tahun (default `db/`) |
 | `--max-pages N` | batas halaman per tahun, pengaman kalau paginasi nakal |
 | `--delay` / `--delay-max` | jeda acak antar halaman (detik) |
 | `--dry-run` | pindai dan laporkan tanpa menulis apa pun |
@@ -37,7 +44,7 @@ bersamaan dengan sesi unduh instance yang memakai tab lain.
 
 ```json
 {
-  "source": "https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan/",
+  "source": "https://www.idx.co.id/primary/ListedCompany/GetFinancialReport?indexFrom=1&pageSize=5000&reportType=rdf&EmitenType=s&kodeEmiten=&SortColumn=KodeEmiten&SortOrder=asc&year=2025&periode=audit",
   "updated_at": "2026-10-07T10:15:00+07:00",
   "entries": {
     "2025|AADI": {

@@ -84,7 +84,7 @@ def test_pesan_popup_memberi_alamat_tab_dua_pilihan() -> None:
     assert "Verify you are human" in teks
     assert "DIHENTIKAN" in teks
     assert "OK" in teks and "Batal" in teks
-    assert "download_history.json" in teks, "resume harus disebut, bukan disangka"
+    assert "download_history_" in teks, "resume harus disebut, bukan disangka"
 
 
 def test_pesan_popup_tanpa_alamat_memakai_homepage() -> None:

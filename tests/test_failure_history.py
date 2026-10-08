@@ -52,7 +52,7 @@ def test_failure_entry_has_reason_and_no_file_keys(tmp_path: Path) -> None:
 def test_failure_entry_survives_json_roundtrip(tmp_path: Path) -> None:
     hist = empty_history()
     _failure(hist, tmp_path)
-    reloaded = load_download_history(tmp_path)
+    reloaded = load_download_history(tmp_path, year=2025)
     entry = history_entry(reloaded, "ARKA", 2025, 4)
     assert isinstance(entry, dict)
     assert entry["status"] == "failed"

@@ -28,7 +28,7 @@ Menjadikan sistem yang sudah tervalidasi secara fungsional menjadi fondasi produ
 | Reuse satu tab profil | Tervalidasi | Satu tab digunakan untuk beberapa stock |
 | Download melalui Firefox staging | Tervalidasi | Cookies/session IDX tetap terpakai |
 | Pemindahan file oleh Python | Tervalidasi | `saham/<STOCK>/<YEAR>/` |
-| History JSON | Tervalidasi | `download_history.json` |
+| History JSON | Tervalidasi | `download_history_<year>.json` |
 | Skip berdasarkan history | Tervalidasi | 4 link dilewati tanpa download ulang |
 | SHA-256 dan duplicate check | Tervalidasi | 4 hash unik |
 | Penulisan JSON atomik | Sederhana | Implementasi sudah ada |
@@ -514,7 +514,7 @@ keepalive diganti `fetch`, dan HTTP fallback tidak menghormati socket hidup.
 | Link terdeteksi | 4 (TW1, TW2, TW3, TW4) |
 | Jalur TW4 | `/Audit/NCKL/`, bukan `/TW4/` ✓ |
 | Tindakan | 4 `STEP SKIP` (hash valid), 0 unduhan |
-| Hash | keempatnya cocok dengan `download_history.json` |
+| Hash | keempatnya cocok dengan `download_history_<year>.json` |
 | Duplikat | tidak ada |
 | Staging | tidak ada file tersisa |
 | Exit code | 0 |
@@ -717,7 +717,7 @@ pembuatan baru ikut teruji.
 | Exit code | 0 |
 
 Jadi byte yang sama direproduksi ulang dari IDX pada cold start. Itu konfirmasi
-mandiri bahwa hash di `download_history.json` bukan hanya konsisten dengan
+mandiri bahwa hash di `download_history_<year>.json` bukan hanya konsisten dengan
 file yang pernah ada, tetapi juga benar sebagai nilai yang dihitung ulang.
 
 #### Celah 1: file log tidak merekam proses unduhan

@@ -33,9 +33,13 @@ def empty_history() -> dict[str, Any]:
     return {"version": HISTORY_VERSION, "downloads": {}}
 
 
-def load_download_history(download_dir: Path | None = None) -> dict[str, Any]:
-    """Load the history JSON, returning an empty document when absent."""
-    path = download_history_path(download_dir)
+def load_download_history(
+    download_dir: Path | None = None,
+    *,
+    year: int,
+) -> dict[str, Any]:
+    """Load one year's history JSON, returning an empty document when absent."""
+    path = download_history_path(download_dir, year=year)
     if not path.exists():
         return empty_history()
     with path.open("r", encoding="utf-8") as handle:
@@ -48,9 +52,11 @@ def load_download_history(download_dir: Path | None = None) -> dict[str, Any]:
 def save_download_history(
     history: dict[str, Any],
     download_dir: Path | None = None,
+    *,
+    year: int,
 ) -> Path:
-    """Write the history atomically so a crash cannot truncate it."""
-    path = download_history_path(download_dir)
+    """Write one year's history atomically so a crash cannot truncate it."""
+    path = download_history_path(download_dir, year=year)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".json.tmp")
     with temporary.open("w", encoding="utf-8") as handle:
@@ -119,7 +125,7 @@ def record_download_history(
         INTEGRITY_STATUS_KEY: INTEGRITY_VERIFIED,
         COMPLETED_AT_KEY: datetime.now(UTC).isoformat(),
     }
-    return save_download_history(history, download_dir)
+    return save_download_history(history, download_dir, year=year)
 
 
 # Failure-entry keys. A failure entry deliberately carries no FILE_KEY /
@@ -171,7 +177,7 @@ def record_failure_history(
         FAIL_COUNT_KEY: fail_count,
         FAILED_AT_KEY: datetime.now(UTC).isoformat(),
     }
-    return save_download_history(history, download_dir)
+    return save_download_history(history, download_dir, year=year)
 
 
 def stock_year_complete(

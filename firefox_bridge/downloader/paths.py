@@ -15,8 +15,16 @@ from ..validation import normalize_stock_code
 
 SAHAM_FOLDER = "saham"
 STAGING_FOLDER = "staging"
-HISTORY_FILENAME = "download_history.json"
+# Riwayat dipecah per tahun pelaporan: satu tahun, satu berkas. Sebuah run
+# untuk 2024 menulis `download_history_2024.json` dan tidak pernah menyentuh
+# catatan 2025 -- itu gunanya dipisah, tahun yang sudah selesai dibekukan.
+HISTORY_STEM = "download_history"
 DOWNLOAD_DIR_ENV = "FIREFOX_BRIDGE_DOWNLOAD_DIR"
+
+
+def history_filename(year: int) -> str:
+    """Return the history filename for one reporting year."""
+    return f"{HISTORY_STEM}_{year}.json"
 
 
 def default_download_dir() -> Path:
@@ -87,9 +95,14 @@ def staging_report_path(
     return download_root(download_dir) / staging_relative_filename(stock, year, quarter)
 
 
-def download_history_path(download_dir: Path | None = None) -> Path:
-    """Return the absolute path of the history JSON file."""
-    return download_root(download_dir) / SAHAM_FOLDER / HISTORY_FILENAME
+def download_history_path(download_dir: Path | None = None, *, year: int) -> Path:
+    """Return the absolute path of the history JSON file for one year.
+
+    `year` is keyword-only and has no default on purpose: a caller that has
+    forgotten which year it is working on must fail at the type checker
+    instead of silently reading some other year's record.
+    """
+    return download_root(download_dir) / SAHAM_FOLDER / history_filename(year)
 
 
 def saham_folder(download_dir: Path | None = None) -> Path:

@@ -59,7 +59,9 @@ def test_staging_path_avoids_leading_dot(tmp_path: Path) -> None:
 
 
 def test_download_history_path_and_download_exists(tmp_path: Path) -> None:
-    assert download_history_path(tmp_path) == tmp_path / "saham" / "download_history.json"
+    assert download_history_path(tmp_path, year=2025) == (
+        tmp_path / "saham" / "download_history_2025.json"
+    )
     assert not download_exists("NCKL", 2025, 1, tmp_path)
 
     path = final_report_path("NCKL", 2025, 1, tmp_path)
@@ -84,22 +86,22 @@ def test_download_root_uses_environment_override(
 
 
 def test_empty_history_and_missing_file(tmp_path: Path) -> None:
-    assert load_download_history(tmp_path) == empty_history()
-    assert not download_history_path(tmp_path).exists()
+    assert load_download_history(tmp_path, year=2025) == empty_history()
+    assert not download_history_path(tmp_path, year=2025).exists()
 
 
 def test_load_download_history_rejects_broken_json(tmp_path: Path) -> None:
-    path = download_history_path(tmp_path)
+    path = download_history_path(tmp_path, year=2025)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"version": 1}', encoding="utf-8")
 
     with pytest.raises(ValueError):
-        load_download_history(tmp_path)
+        load_download_history(tmp_path, year=2025)
 
 
 def test_save_download_history_is_atomic(tmp_path: Path) -> None:
     history = empty_history()
-    path = save_download_history(history, tmp_path)
+    path = save_download_history(history, tmp_path, year=2025)
 
     assert path.is_file()
     assert not path.with_suffix(".json.tmp").exists()
@@ -189,7 +191,7 @@ def test_record_download_history_keeps_absolute_path_outside_root(
 
 
 def test_hash_audit_detects_duplicate_quarters(tmp_path: Path) -> None:
-    history = load_download_history(tmp_path)
+    history = load_download_history(tmp_path, year=2025)
     contents = {
         1: b"same report",
         2: b"same report",
@@ -212,7 +214,7 @@ def test_hash_audit_detects_duplicate_quarters(tmp_path: Path) -> None:
         )
 
     hashes = audit_stock_year_hashes("NCKL", 2025, tmp_path)
-    saved = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    saved = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
     quarters = saved["downloads"]["NCKL"]["2025"]
 
     assert hashes[1] == hashes[2]
@@ -227,16 +229,16 @@ def test_hash_audit_detects_duplicate_quarters(tmp_path: Path) -> None:
 
 
 def test_hash_audit_backfills_a_missing_hash(tmp_path: Path) -> None:
-    history = load_download_history(tmp_path)
+    history = load_download_history(tmp_path, year=2025)
     path = final_report_path("NCKL", 2025, 1, tmp_path)
     path.write_bytes(CONTENT)
     history["downloads"] = {
         "NCKL": {"2025": {"1": {"url": "u", "file": "f", "size": len(CONTENT)}}}
     }
-    save_download_history(history, tmp_path)
+    save_download_history(history, tmp_path, year=2025)
 
     hashes = audit_stock_year_hashes("NCKL", 2025, tmp_path)
-    saved = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    saved = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
     entry = saved["downloads"]["NCKL"]["2025"]["1"]
 
     assert entry["sha256"] == hashes[1]
@@ -251,7 +253,7 @@ def test_hash_audit_marks_a_corrupted_file(tmp_path: Path) -> None:
     path.write_bytes(b"corrupted payload")
 
     audit_stock_year_hashes("NCKL", 2025, tmp_path)
-    saved = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    saved = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
 
     assert saved["downloads"]["NCKL"]["2025"]["1"]["integrity_status"] == INTEGRITY_MISMATCH
 
@@ -263,10 +265,10 @@ def test_hash_audit_clears_a_stale_duplicate_flag(tmp_path: Path) -> None:
         path.write_bytes(content)
         record_download_history(history, "NCKL", 2025, quarter, "u", path, tmp_path)
     history["downloads"]["NCKL"]["2025"]["2"]["duplicate_of"] = 1
-    save_download_history(history, tmp_path)
+    save_download_history(history, tmp_path, year=2025)
 
     audit_stock_year_hashes("NCKL", 2025, tmp_path)
-    saved = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    saved = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
 
     assert saved["downloads"]["NCKL"]["2025"]["2"]["duplicate_of"] is None
 
@@ -277,7 +279,7 @@ def test_hash_audit_ignores_files_without_json_entries(tmp_path: Path) -> None:
     hashes = audit_stock_year_hashes("NCKL", 2025, tmp_path)
 
     assert set(hashes) == {1}
-    assert not download_history_path(tmp_path).exists()
+    assert not download_history_path(tmp_path, year=2025).exists()
 
 
 def test_is_download_complete_requires_a_stable_non_empty_file(tmp_path: Path) -> None:
@@ -356,7 +358,7 @@ def test_recorded_entry_survives_a_reload(tmp_path: Path) -> None:
     path.write_bytes(CONTENT)
     record_download_history(history, "NCKL", 2025, 1, "u", path, tmp_path)
 
-    reloaded: dict[str, Any] = load_download_history(tmp_path)
+    reloaded: dict[str, Any] = load_download_history(tmp_path, year=2025)
 
     assert history_entry(reloaded, "NCKL", 2025, 1) == history_entry(
         history,

@@ -158,7 +158,7 @@ def download_detected_link(
     if quarter is None:
         raise ValueError(f"Periode tidak dikenali dari URL: {href}")
 
-    history = load_download_history(download_dir)
+    history = load_download_history(download_dir, year=year)
     final_path = final_report_path(stock, year, quarter, download_dir)
     recorded = history_entry(history, stock, year, quarter)
     integrity_failed = False
@@ -239,7 +239,7 @@ def download_detected_link(
     wait_before_step("jeda sebelum memindahkan file")
     move_completed_download(staging_path, final_path, replace=integrity_failed)
     wait_before_step("jeda sebelum menulis JSON")
-    history = load_download_history(download_dir)
+    history = load_download_history(download_dir, year=year)
     history_path = record_download_history(
         history,
         stock,
@@ -277,7 +277,7 @@ def plan_stock_year(
     """
     tab_id = prepare_stock_year(client, stock, year)
     links, _ = wait_for_detected_links(client, tab_id, year)
-    history = load_download_history(download_dir)
+    history = load_download_history(download_dir, year=year)
     plans: list[DownloadPlan] = []
     for link in links:
         href = str(link.get("href") or "")

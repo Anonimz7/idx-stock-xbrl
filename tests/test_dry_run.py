@@ -57,7 +57,7 @@ def recorded(tmp_path: Path, quarter: int = 1, href: str = HREF, payload: bytes 
     path.write_bytes(real_zip(payload))
     history = empty_history()
     record_download_history(history, "NCKL", 2025, quarter, href, path, tmp_path)
-    save_download_history(history, tmp_path)
+    save_download_history(history, tmp_path, year=2025)
     return path
 
 
@@ -115,7 +115,7 @@ def test_an_incomplete_history_entry_is_flagged_as_needing_an_update(tmp_path: P
         "size": path.stat().st_size, "sha256": "", "duplicate_of": None,
         "integrity_status": "verified", "completed_at": "whenever",
     }}}
-    save_download_history(history, tmp_path)
+    save_download_history(history, tmp_path, year=2025)
 
     plan = plan_for("NCKL", 2025, 1, HREF, tmp_path)
 
@@ -125,13 +125,13 @@ def test_an_incomplete_history_entry_is_flagged_as_needing_an_update(tmp_path: P
 
 def test_planning_writes_nothing(tmp_path: Path) -> None:
     recorded(tmp_path)
-    before = download_history_path(tmp_path).read_text(encoding="utf-8")
+    before = download_history_path(tmp_path, year=2025).read_text(encoding="utf-8")
     listing = sorted(str(path) for path in tmp_path.rglob("*"))
 
     plan_for("NCKL", 2025, 1, HREF, tmp_path)
     plan_for("NCKL", 2025, 2, HREF_T2, tmp_path)
 
-    assert download_history_path(tmp_path).read_text(encoding="utf-8") == before
+    assert download_history_path(tmp_path, year=2025).read_text(encoding="utf-8") == before
     assert sorted(str(path) for path in tmp_path.rglob("*")) == listing
 
 
@@ -257,12 +257,12 @@ def test_dry_run_does_not_touch_the_history(
     _patched: list[dict[str, Any]], tmp_path: Path
 ) -> None:
     recorded(tmp_path, quarter=1)
-    before = download_history_path(tmp_path).read_text(encoding="utf-8")
+    before = download_history_path(tmp_path, year=2025).read_text(encoding="utf-8")
 
     run(["--stocks", "NCKL", "--year", "2025", "--all-detected", "--dry-run",
          "--download-dir", str(tmp_path)])
 
-    assert download_history_path(tmp_path).read_text(encoding="utf-8") == before
+    assert download_history_path(tmp_path, year=2025).read_text(encoding="utf-8") == before
 
 
 def test_dry_run_still_writes_a_report_when_asked(

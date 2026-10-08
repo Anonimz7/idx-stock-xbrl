@@ -136,10 +136,10 @@ The equivalent module form keeps working for existing scripts:
 ## Download audited annual `instance.zip` directly
 
 Where the flow above *finds* report links by driving the IDX year panel, the
-`instance` program takes its list from `db/instance_catalog.json` — the
+`instance` program takes its list from `db/instance_catalog_<year>.json` — the
 archives IDX has actually published, frozen by `idx_watcher` — and downloads
 them with no page interaction. It is a separate program writing under its own
-root, so its `download_history.json` can never collide with the page-driven
+root, so its `download_history_<year>.json` can never collide with the page-driven
 one — both are keyed by stock + year + quarter, which is exactly the collision
 the separation prevents.
 
@@ -168,7 +168,7 @@ Useful options:
 
 | Option | Meaning |
 | --- | --- |
-| `--catalog` | Catalog JSON. Default `db/instance_catalog.json` — deliberately the same path `idx_watcher` writes, so the command above needs no second argument. |
+| `--catalog` | Catalog JSON. Default `db/instance_catalog_<year>.json` — resolved from `--year`, the same file `idx_watcher` writes, so the command above needs no second argument. |
 | `--year` | Reporting year. |
 | `--delay` / `--delay-max` | Seconds between stocks; with `--delay-max`, uniform random in `[--delay, --delay-max]`. Minimum 1. |
 | `--download-dir` | Download root. Default `$FIREFOX_BRIDGE_INSTANCE_DIR` or `<download root>/instance`. |
@@ -178,7 +178,7 @@ Useful options:
 
 The catalog says what *should* exist. `db/audit_downloads.py` checks that
 against what actually does, comparing all three sources at once: the catalog,
-`download_history.json`, and the folders on disk. It is read-only, needs no
+`download_history_<year>.json`, and the folders on disk. It is read-only, needs no
 bridge, and exits `1` when anything is inconsistent.
 
 ```powershell
@@ -291,7 +291,7 @@ into the company-code box.
 ```text
 <download-dir>/
   saham/
-    download_history.json
+    download_history_<year>.json
     staging/
       <STOCK>/<YEAR>/<STOCK>_inlineXBRL_T<n>_<YEAR>.zip
     <STOCK>/
@@ -304,7 +304,7 @@ and only then updates the JSON.
 
 ## History and resume
 
-`download_history.json` stores one entry per report:
+`download_history_<year>.json` stores one entry per report:
 
 ```json
 {

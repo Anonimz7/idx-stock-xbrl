@@ -280,23 +280,29 @@ def _report_processed(
     )
 
 
-def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
+def _run_history_command(mode: str, download_dir_arg: str | None, year: int) -> int:
     """Run `history verify` or `history rebuild` and return its exit code.
 
     Both are offline: no browser, no bridge, no pacing. `verify` is read-only by
     construction, which is what makes it safe to run against a history you are
     unsure of -- it is the tool you reach for *because* you do not trust the
     state.
+
+    The history is per reporting year, so `year` selects both the JSON file and
+    the archives on disk that count as its contents. Without it a verify of one
+    year would report every other year's archives as unrecorded.
     """
     download_dir = Path(download_dir_arg) if download_dir_arg else None
 
     if mode == "rebuild":
         # Pass the current history so a repair keeps the URLs it already knows
         # instead of throwing them away.
-        existing = load_download_history(download_dir) if download_history_path(
-            download_dir
-        ).exists() else None
-        history, report = rebuild_history(download_dir, existing)
+        existing = (
+            load_download_history(download_dir, year=year)
+            if download_history_path(download_dir, year=year).exists()
+            else None
+        )
+        history, report = rebuild_history(download_dir, existing, year=year)
         for finding in report.findings:
             progress(
                 f"  {finding.stock} {finding.year} TW{finding.quarter}: "
@@ -312,7 +318,7 @@ def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
                 "history tidak ditulis"
             )
             return EXIT_FAILURES
-        path = save_download_history(history, download_dir)
+        path = save_download_history(history, download_dir, year=year)
         progress(
             f"HISTORY REBUILT: {len(report.findings)} entri -> {path}",
             entries=len(report.findings),
@@ -327,7 +333,7 @@ def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
             )
         return EXIT_SUCCESS
 
-    history = load_download_history(download_dir)
+    history = load_download_history(download_dir, year=year)
     # "0 ok, 0 problems" from a root with no `saham` folder is a false all-clear,
     # and it is the exact shape a typo'd `--download-dir` produces -- passing
     # `...\saham` instead of its parent. One rule, no heuristic: if there is no
@@ -343,7 +349,7 @@ def _run_history_command(mode: str, download_dir_arg: str | None) -> int:
         )
         return EXIT_INVALID_INPUT
 
-    report = verify_history(history, download_dir)
+    report = verify_history(history, download_dir, year=year)
     if not report.findings and not folder.is_dir():
         notice("  -> tidak ada yang bisa diverifikasi")
         return EXIT_INVALID_INPUT
@@ -629,7 +635,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         progress(runconfig.describe(resolution), config=str(resolution.path))
 
     if args.history is not None:
-        return _run_history_command(args.history, args.download_dir)
+        return _run_history_command(args.history, args.download_dir, args.year)
 
     if args.stocks is None and args.stocks_file is None:
         problem(
@@ -758,7 +764,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     # Snapshot sekali di awal: pre-check di bawah hanya peduli pada status
     # sebelum run ini (setiap emiten hanya dikunjungi sekali per run).
-    history = load_download_history(download_dir)
+    history = load_download_history(download_dir, year=args.year)
 
     # Before anything else: a run killed mid-download leaves a partial file at
     # the exact path this run is about to download to, and the completion check

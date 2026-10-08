@@ -136,16 +136,25 @@ def _parse_filename(path: Path) -> tuple[str, int, int] | None:
 
 def _iter_report_files(
     download_dir: Path | None,
+    *,
+    year: int,
 ) -> list[tuple[Path, str, int, int]]:
-    """Return every recognisable report archive under `saham/`."""
+    """Return every recognisable report archive for one year under `saham/`.
+
+    Scoped by year because the history it is compared against is per year. A
+    2025 verify that saw 2024's archives would report all of them as orphans --
+    files on disk that no history knows about -- which is the exact opposite of
+    the truth.
+    """
     found: list[tuple[Path, str, int, int]] = []
     root = download_root(download_dir) / SAHAM_FOLDER
     if not root.is_dir():
         return found
     for path in sorted(root.rglob("*.zip")):
         parsed = _parse_filename(path)
-        if parsed is not None:
-            found.append((path, *parsed))
+        if parsed is None or parsed[1] != year:
+            continue
+        found.append((path, *parsed))
     return found
 
 
@@ -153,9 +162,10 @@ def verify_history(
     history: dict[str, Any],
     download_dir: Path | None = None,
     *,
+    year: int,
     find_orphans: bool = True,
 ) -> AuditReport:
-    """Compare every history entry with the file it points at.
+    """Compare every history entry for one year with the file it points at.
 
     Read-only by construction: it opens files to hash them and nothing else.
     """
@@ -239,7 +249,9 @@ def verify_history(
                 )
 
     if find_orphans:
-        for path, stock, year, quarter in _iter_report_files(download_dir):
+        for path, stock, found_year, quarter in _iter_report_files(
+            download_dir, year=year
+        ):
             relative = relative_report_path(path, download_dir)
             if relative.lower() in seen:
                 continue
@@ -247,7 +259,7 @@ def verify_history(
             # archive and writing its record. Re-downloading it would be waste.
             findings.append(
                 Finding(
-                    stock, year, quarter, STATUS_ORPHAN,
+                    stock, found_year, quarter, STATUS_ORPHAN,
                     "file ada tapi tidak tercatat di JSON",
                     actual_sha256=file_sha256(path), path=relative,
                 )
@@ -259,6 +271,8 @@ def verify_history(
 def rebuild_history(
     download_dir: Path | None = None,
     existing: dict[str, Any] | None = None,
+    *,
+    year: int,
 ) -> tuple[dict[str, Any], AuditReport]:
     """Reconstruct the history from the archives on disk.
 
@@ -271,6 +285,9 @@ def rebuild_history(
     `existing` matters: without it, running this to repair one missing entry
     would throw away every URL already recorded. Rebuild is a repair, so it
     keeps what is already known and only fills the gaps.
+
+    Only archives of `year` are picked up, so a repair of 2024 cannot silently
+    rebuild a history document that claims to be 2025's.
     """
     previous = existing or empty_history()
     previous_downloads = previous.get("downloads") or {}
@@ -279,24 +296,28 @@ def rebuild_history(
     findings: list[Finding] = []
     stamp = datetime.now(UTC).isoformat()
 
-    for path, stock, year, quarter in _iter_report_files(download_dir):
+    for path, stock, found_year, quarter in _iter_report_files(
+        download_dir, year=year
+    ):
         relative = relative_report_path(path, download_dir)
         try:
             validate_archive(path)
         except ValidationError as error:
             findings.append(
                 Finding(
-                    stock, year, quarter, STATUS_CORRUPT, str(error), path=relative,
+                    stock, found_year, quarter, STATUS_CORRUPT, str(error), path=relative,
                 )
             )
             continue
 
         digest = file_sha256(path)
-        known = _existing_entry(previous_downloads, stock, year, quarter)
+        known = _existing_entry(previous_downloads, stock, found_year, quarter)
         kept_url = str(known.get(URL_KEY) or "") if known else ""
         recovered = bool(kept_url)
 
-        downloads.setdefault(stock, {}).setdefault(str(year), {})[str(quarter)] = {
+        downloads.setdefault(stock, {}).setdefault(str(found_year), {})[
+            str(quarter)
+        ] = {
             URL_KEY: kept_url or None,
             FILE_KEY: relative,
             SIZE_KEY: path.stat().st_size,

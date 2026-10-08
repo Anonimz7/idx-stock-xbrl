@@ -105,7 +105,7 @@ def test_download_detected_link_moves_file_and_json_skips_next_run(
     )
 
     final_path = tmp_path / "saham" / "NCKL" / "2025" / "NCKL_inlineXBRL_T1_2025.zip"
-    history = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    history = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
     entry = history["downloads"]["NCKL"]["2025"]["1"]
 
     assert first.filename == str(final_path)
@@ -204,7 +204,7 @@ def test_download_detected_link_backfills_history_for_an_untracked_file(
         tmp_path,
     )
 
-    history = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    history = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
 
     assert history["downloads"]["NCKL"]["2025"]["1"]["url"] == HREF
     assert client.downloads == []
@@ -239,7 +239,7 @@ def test_download_detected_link_redownloads_a_corrupted_file(
         tmp_path,
     )
 
-    history = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    history = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
 
     assert client.downloads == ["e1", "e1"]
     assert final_path.read_bytes() == CONTENT
@@ -369,7 +369,7 @@ def test_download_all_detected_downloads_four_reports_once(
     assert len(first) == 4
     assert len(second) == 4
     assert client.downloads == ["e1", "e2", "e3", "e4"]
-    history = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    history = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
     assert set(history["downloads"]["NCKL"]["2025"]) == {"1", "2", "3", "4"}
 
 

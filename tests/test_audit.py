@@ -53,7 +53,7 @@ def recorded(tmp_path: Path, quarter: int = 1, payload: bytes = b"payload") -> P
     path.write_bytes(real_zip(payload))
     history = empty_history()
     record_download_history(history, "NCKL", 2025, quarter, HREF, path, tmp_path)
-    save_download_history(history, tmp_path)
+    save_download_history(history, tmp_path, year=2025)
     return path
 
 
@@ -61,7 +61,7 @@ def recorded(tmp_path: Path, quarter: int = 1, payload: bytes = b"payload") -> P
 
 
 def test_an_empty_folder_verifies_cleanly(tmp_path: Path) -> None:
-    report = verify_history(empty_history(), tmp_path)
+    report = verify_history(empty_history(), tmp_path, year=2025)
 
     assert report.findings == ()
     assert report.healthy is True
@@ -69,7 +69,7 @@ def test_an_empty_folder_verifies_cleanly(tmp_path: Path) -> None:
 
 def test_a_matching_file_verifies(tmp_path: Path) -> None:
     recorded(tmp_path)
-    report = verify_history(load_download_history(tmp_path), tmp_path)
+    report = verify_history(load_download_history(tmp_path, year=2025), tmp_path, year=2025)
 
     assert len(report.ok) == 1
     assert report.healthy is True
@@ -77,7 +77,7 @@ def test_a_matching_file_verifies(tmp_path: Path) -> None:
 
 def test_a_deleted_file_is_reported_missing(tmp_path: Path) -> None:
     recorded(tmp_path).unlink()
-    report = verify_history(load_download_history(tmp_path), tmp_path)
+    report = verify_history(load_download_history(tmp_path, year=2025), tmp_path, year=2025)
 
     assert len(report.by_status(STATUS_MISSING)) == 1
     assert report.healthy is False
@@ -86,7 +86,7 @@ def test_a_deleted_file_is_reported_missing(tmp_path: Path) -> None:
 def test_a_modified_file_is_reported_as_a_mismatch(tmp_path: Path) -> None:
     path = recorded(tmp_path)
     path.write_bytes(real_zip(b"a completely different payload"))
-    report = verify_history(load_download_history(tmp_path), tmp_path)
+    report = verify_history(load_download_history(tmp_path, year=2025), tmp_path, year=2025)
 
     assert len(report.by_status(STATUS_MISMATCH)) == 1
     finding = report.by_status(STATUS_MISMATCH)[0]
@@ -114,7 +114,7 @@ def test_a_file_matching_its_hash_but_not_a_zip_is_corrupt(tmp_path: Path) -> No
         "duplicate_of": None, "integrity_status": "verified", "completed_at": "now",
     }}}
 
-    report = verify_history(history, tmp_path)
+    report = verify_history(history, tmp_path, year=2025)
 
     assert len(report.by_status(STATUS_CORRUPT)) == 1
     assert report.healthy is False
@@ -130,7 +130,7 @@ def test_an_orphan_is_reported(tmp_path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(real_zip())
 
-    report = verify_history(empty_history(), tmp_path)
+    report = verify_history(empty_history(), tmp_path, year=2025)
 
     assert len(report.orphans) == 1
     assert report.orphans[0].stock == "NCKL"
@@ -143,7 +143,7 @@ def test_an_orphan_does_not_make_the_report_unhealthy(tmp_path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(real_zip())
 
-    report = verify_history(empty_history(), tmp_path)
+    report = verify_history(empty_history(), tmp_path, year=2025)
 
     assert report.orphans
     assert report.problems == ()
@@ -152,18 +152,18 @@ def test_an_orphan_does_not_make_the_report_unhealthy(tmp_path: Path) -> None:
 
 def test_a_recorded_file_is_not_also_reported_as_an_orphan(tmp_path: Path) -> None:
     recorded(tmp_path)
-    report = verify_history(load_download_history(tmp_path), tmp_path)
+    report = verify_history(load_download_history(tmp_path, year=2025), tmp_path, year=2025)
 
     assert report.orphans == ()
 
 
 def test_verify_writes_nothing(tmp_path: Path) -> None:
     recorded(tmp_path)
-    before = json.dumps(load_download_history(tmp_path), sort_keys=True)
+    before = json.dumps(load_download_history(tmp_path, year=2025), sort_keys=True)
 
-    verify_history(load_download_history(tmp_path), tmp_path)
+    verify_history(load_download_history(tmp_path, year=2025), tmp_path, year=2025)
 
-    assert json.dumps(load_download_history(tmp_path), sort_keys=True) == before
+    assert json.dumps(load_download_history(tmp_path, year=2025), sort_keys=True) == before
 
 
 def test_a_file_named_like_nothing_recognisable_is_ignored(tmp_path: Path) -> None:
@@ -172,7 +172,7 @@ def test_a_file_named_like_nothing_recognisable_is_ignored(tmp_path: Path) -> No
     stray.parent.mkdir(parents=True, exist_ok=True)
     stray.write_bytes(real_zip())
 
-    report = verify_history(empty_history(), tmp_path)
+    report = verify_history(empty_history(), tmp_path, year=2025)
 
     assert report.orphans == ()
     assert report.findings == ()
@@ -185,7 +185,7 @@ def test_rebuild_recovers_entries_from_the_files_on_disk(tmp_path: Path) -> None
     recorded(tmp_path, quarter=1)
     recorded(tmp_path, quarter=4, payload=b"audit payload")
 
-    history, report = rebuild_history(tmp_path)
+    history, report = rebuild_history(tmp_path, year=2025)
 
     assert len(report.findings) == 2
     assert all(finding.status == STATUS_RECOVERED for finding in report.findings)
@@ -196,7 +196,7 @@ def test_a_rebuilt_entry_does_not_invent_a_url(tmp_path: Path) -> None:
     """The filename cannot say which IDX path it came from, and guessing is worse."""
     recorded(tmp_path)
 
-    history, _ = rebuild_history(tmp_path)
+    history, _ = rebuild_history(tmp_path, year=2025)
 
     entry = history["downloads"]["NCKL"]["2025"]["1"]
     assert entry["url"] is None
@@ -208,7 +208,7 @@ def test_a_rebuilt_entry_carries_a_real_hash_and_size(tmp_path: Path) -> None:
 
     path = recorded(tmp_path)
 
-    history, _ = rebuild_history(tmp_path)
+    history, _ = rebuild_history(tmp_path, year=2025)
 
     entry = history["downloads"]["NCKL"]["2025"]["1"]
     assert entry["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
@@ -224,7 +224,7 @@ def test_rebuild_keeps_urls_the_old_history_already_knew(tmp_path: Path) -> None
     recorded(tmp_path, quarter=1)
     recorded(tmp_path, quarter=2, payload=b"second")
 
-    history, _ = rebuild_history(tmp_path, load_download_history(tmp_path))
+    history, _ = rebuild_history(tmp_path, load_download_history(tmp_path, year=2025), year=2025)
 
     quarter_two = history["downloads"]["NCKL"]["2025"]["2"]
     assert quarter_two["url"] == HREF
@@ -237,7 +237,9 @@ def test_rebuild_fills_the_gap_for_an_entry_the_history_never_knew(tmp_path: Pat
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(real_zip(b"recovered"))
 
-    history, report = rebuild_history(tmp_path, load_download_history(tmp_path))
+    history, report = rebuild_history(
+        tmp_path, load_download_history(tmp_path, year=2025), year=2025,
+    )
 
     quarter_two = history["downloads"]["NCKL"]["2025"]["2"]
     assert quarter_two["url"] is None
@@ -250,7 +252,7 @@ def test_rebuild_refuses_to_record_an_unreadable_archive(tmp_path: Path) -> None
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"<html>404</html>")
 
-    history, report = rebuild_history(tmp_path)
+    history, report = rebuild_history(tmp_path, year=2025)
 
     assert history["downloads"] == {}
     assert len(report.problems) == 1
@@ -262,10 +264,10 @@ def test_a_rebuilt_history_verifies_cleanly(tmp_path: Path) -> None:
     recorded(tmp_path, quarter=1)
     recorded(tmp_path, quarter=2, payload=b"second")
 
-    history, _ = rebuild_history(tmp_path)
-    save_download_history(history, tmp_path)
+    history, _ = rebuild_history(tmp_path, year=2025)
+    save_download_history(history, tmp_path, year=2025)
 
-    report = verify_history(load_download_history(tmp_path), tmp_path)
+    report = verify_history(load_download_history(tmp_path, year=2025), tmp_path, year=2025)
 
     assert report.healthy is True
     assert len(report.ok) == 2
@@ -364,24 +366,24 @@ def test_history_verify_does_not_need_a_bridge(
 
 def test_history_rebuild_writes_the_json(tmp_path: Path) -> None:
     recorded(tmp_path)
-    (tmp_path / "saham" / "download_history.json").unlink()
+    (tmp_path / "saham" / "download_history_2025.json").unlink()
 
     code = run(["--history", "rebuild", "--download-dir", str(tmp_path)])
 
     assert code == EXIT_SUCCESS
-    assert "NCKL" in load_download_history(tmp_path)["downloads"]
+    assert "NCKL" in load_download_history(tmp_path, year=2025)["downloads"]
 
 
 def test_history_rebuild_refuses_when_an_archive_is_broken(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     recorded(tmp_path)
-    (tmp_path / "saham" / "download_history.json").unlink()
+    (tmp_path / "saham" / "download_history_2025.json").unlink()
     final_report_path("NCKL", 2025, 1, tmp_path).write_bytes(b"<html>404</html>")
 
     code = run(["--history", "rebuild", "--download-dir", str(tmp_path)])
 
     assert code == EXIT_FAILURES
-    assert not (tmp_path / "saham" / "download_history.json").exists(), (
+    assert not (tmp_path / "saham" / "download_history_2025.json").exists(), (
         "a broken archive must not produce a history file"
     )

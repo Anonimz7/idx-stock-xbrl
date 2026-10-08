@@ -370,7 +370,7 @@ def test_the_report_is_moved_and_recorded_exactly_once(
 
     import json
 
-    history = json.loads(download_history_path(tmp_path).read_text(encoding="utf-8"))
+    history = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
     entries = history["downloads"]["NCKL"]["2025"]
     assert list(entries) == ["1"], f"expected one entry, found {list(entries)}"
     assert len(client.downloads) == 3
@@ -392,7 +392,7 @@ def test_retries_exhausted_leaves_no_staged_file_behind(
         )
 
     assert not final_report_path("NCKL", 2025, 1, tmp_path).exists()
-    assert not download_history_path(tmp_path).exists(), "a failed report was recorded"
+    assert not download_history_path(tmp_path, year=2025).exists(), "a failed report was recorded"
     assert len(client.downloads) == RETRY_ATTEMPTS
 
 

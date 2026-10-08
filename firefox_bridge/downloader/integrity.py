@@ -40,7 +40,7 @@ def audit_stock_year_hashes(
     instead of being silently trusted, and identical quarters are linked through
     ``duplicate_of``.
     """
-    history = load_download_history(download_dir)
+    history = load_download_history(download_dir, year=year)
     hashes: dict[int, str] = {}
     changed = False
 
@@ -82,7 +82,7 @@ def audit_stock_year_hashes(
         progress("DUPLICATE HASH: tidak ada", stock=stock, year=year)
 
     if changed:
-        path = save_download_history(history, download_dir)
+        path = save_download_history(history, download_dir, year=year)
         progress(f"HASH JSON OK: {path}", stock=stock, year=year)
     return hashes
 

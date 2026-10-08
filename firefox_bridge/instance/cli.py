@@ -2,8 +2,11 @@
 
 Run from a source checkout::
 
-    .venv\\Scripts\\python.exe -m firefox_bridge.instance.cli \\
-        --catalog db\\instance_catalog.json --year 2025
+    .venv\\Scripts\\python.exe -m firefox_bridge.instance.cli --year 2025
+
+``--catalog`` is optional: it defaults to ``db\\instance_catalog_2025.json``,
+the file ``idx_watcher`` writes for that year. Pass it explicitly to read a
+catalog from anywhere else.
 
 After installation the same run is available as ``firefox-bridge-instance``.
 
@@ -40,7 +43,7 @@ from firefox_bridge.downloader.models import RunSummary
 from firefox_bridge.downloader.paths import SAHAM_FOLDER
 from firefox_bridge.downloader.reporting import print_run_summary
 from firefox_bridge.downloader.staging import describe, scan_staging
-from firefox_bridge.instance.catalog import CatalogError, divergent, load_entries
+from firefox_bridge.instance.catalog import CatalogError, catalog_path, divergent, load_entries
 from firefox_bridge.instance.orchestrator import download_instance
 from firefox_bridge.instance.paths import (
     instance_download_dir,
@@ -62,14 +65,6 @@ EXIT_BRIDGE_UNAVAILABLE = 3
 # the code has to be able to tell "fix your setup" from "go click the box".
 EXIT_CAPTCHA = 4
 
-# Resolved from this file rather than from the working directory, so the
-# default is the same catalog no matter where the command is run from. It is
-# deliberately the same path idx_watcher writes by default -- two defaults
-# that disagree would make "the command from the README found nothing" the
-# normal outcome.
-DEFAULT_CATALOG = Path(__file__).resolve().parent.parent.parent / "db" / "instance_catalog.json"
-
-
 def _year_argument(value: str) -> int:
     """argparse type for `--year`, sharing the config file's rule."""
     try:
@@ -90,13 +85,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--catalog",
         type=str,
-        default=str(DEFAULT_CATALOG),
+        default=None,
         help=(
             "Path to the instance catalog JSON produced by idx_watcher "
-            "(default: db/instance_catalog.json). Every archive this run "
-            "attempts is read from it -- the URL is never constructed, so a "
-            "404 means the file vanished from IDX rather than that our guess "
-            "was wrong."
+            "(default: db/instance_catalog_<year>.json -- one file per "
+            "reporting year, resolved after --year is known). Every archive "
+            "this run attempts is read from it -- the URL is never "
+            "constructed, so a 404 means the file vanished from IDX rather "
+            "than that our guess was wrong."
         ),
     )
     parser.add_argument(
@@ -160,8 +156,14 @@ def _load_catalog(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     URL shape this program has always reproduced, which is what a stale or
     truncated fetch looks like.
     """
+    # `--catalog` carries no default because the file now depends on `--year`,
+    # which argparse has not parsed yet when the parser is built. Resolving it
+    # here keeps an explicit `--catalog path` working exactly as before while
+    # the default follows the year.
+    catalog = catalog_path(args.year) if args.catalog is None else Path(args.catalog)
+
     try:
-        entries = load_entries(args.catalog, args.year)
+        entries = load_entries(catalog, args.year)
     except CatalogError as error:
         parser.error(str(error))
 
@@ -181,8 +183,8 @@ def _load_catalog(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         )
 
     progress(
-        f"STEP 0: katalog {args.catalog}: {len(entries)} entri tahun {args.year}",
-        catalog=str(args.catalog),
+        f"STEP 0: katalog {catalog}: {len(entries)} entri tahun {args.year}",
+        catalog=str(catalog),
         entries=len(entries),
         year=args.year,
     )
@@ -240,7 +242,7 @@ def _dry_run(entries: list[tuple[str, str]], year: int, download_dir: Path | Non
     from firefox_bridge.instance.urls import validate_instance_url
 
     root = instance_download_dir(download_dir)
-    history = load_download_history(root)
+    history = load_download_history(root, year=year)
     would_download = 0
     skipped = 0
 
@@ -409,7 +411,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 # compare a verdict about one URL with a different URL and
                 # ask the question all over again.
                 try:
-                    hist = load_download_history(root)
+                    hist = load_download_history(root, year=args.year)
                     record_failure_history(
                         hist, stock, args.year, AUDITED_QUARTER,
                         href, kind, reason, root,
@@ -490,7 +492,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         problem(f"CAPTCHA: {captcha}")
         problem("  -> run DIHENTIKAN; tab IDX sengaja dibiarkan terbuka.")
         problem('     Centang "Verify you are human" di tab itu, lalu jalankan')
-        problem("     ulang perintah yang sama; download_history.json jadi dasar resume.")
+        problem("     ulang perintah yang sama; download_history_<tahun>.json jadi dasar resume.")
         return EXIT_CAPTCHA
     if summary.fatal_error:
         return EXIT_BRIDGE_UNAVAILABLE

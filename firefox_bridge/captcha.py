@@ -89,7 +89,7 @@ def popup_text(page_url: str | None) -> str:
         "2. Klik OK -- unduhan dilanjutkan dari saham terakhir.\n"
         "\n"
         "Klik Batal untuk keluar. Jalankan ulang perintah yang sama untuk\n"
-        "melanjutkan; download_history.json jadi dasar resume."
+        "melanjutkan; download_history_<tahun>.json jadi dasar resume."
     )
 
 

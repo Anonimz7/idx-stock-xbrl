@@ -77,7 +77,9 @@ def plan_for(
     # a dry run cannot report "fine" for something the run would reject.
     validate_report_url(href, code, year, quarter)
 
-    document = history if history is not None else load_download_history(download_dir)
+    document = (
+        history if history is not None else load_download_history(download_dir, year=year)
+    )
     final_path = final_report_path(code, year, quarter, download_dir)
     recorded = history_entry(document, code, year, quarter)
     recorded_hash = str((recorded or {}).get("sha256") or "")

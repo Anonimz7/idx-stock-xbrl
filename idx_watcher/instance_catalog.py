@@ -51,10 +51,14 @@ from firefox_bridge.client import (
     FirefoxBridgeClient,
     FirefoxBridgeClientError,
 )
+from firefox_bridge.instance.catalog import CATALOG_DIR, CATALOG_STEM, catalog_path
 from firefox_bridge.pacing import sleep_between_stocks
 
+# Konvensi penamaan berkas katalog hidup di pembaca, bukan di sini: penulis
+# dan pembaca harus memakai satu definisi, karena dua default yang berbeda
+# membuat "perintah dari README tidak menemukan apa pun" jadi hasil normal.
+
 PAGE_URL = "https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan/"
-DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "db" / "instance_catalog.json"
 # `File_Path` dari API berupa path relatif; prefix ini membuatnya URL utuh
 # persis seperti yang ditulis halaman.
 INDEX_BASE = "https://www.idx.co.id"
@@ -389,28 +393,107 @@ def _wait_page_change(
     )
 
 
-def load_catalog(path: Path) -> dict:
-    if not path.exists():
-        return {"source": PAGE_URL, "entries": {}}
+def _year_of(key: object) -> int:
+    """Ambil tahun dari kunci entri `TAHUN|EMITEN`."""
+    head = str(key).split("|", 1)[0]
+    if not head.isdigit():
+        raise CatalogError(f"kunci entri tidak berbentuk TAHUN|EMITEN: {key!r}")
+    return int(head)
+
+
+def _read_catalog(path: Path) -> dict:
+    """Baca satu berkas katalog; wajib objek berisi kunci `entries`."""
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise CatalogError(f"{path} bukan objek JSON")
-    data.setdefault("source", PAGE_URL)
-    data.setdefault("entries", {})
+    if not isinstance(data.get("entries"), dict):
+        raise CatalogError(f"{path} bukan katalog (tidak ada kunci `entries`)")
     return data
 
 
-def save_catalog(path: Path, catalog: dict) -> None:
-    """Tulis atomik supaya katalog tidak pernah tersimpan setengah jadi."""
-    catalog["source"] = PAGE_URL
-    catalog["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
-    with temp.open("w", encoding="utf-8") as handle:
-        json.dump(catalog, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
-    temp.replace(path)
+def load_catalogs(directory: Path) -> dict:
+    """Gabung semua katalog per tahun di `directory` menjadi satu peta.
+
+    Kuncinya tetap `TAHUN|EMITEN`, jadi penggabungan lintas tahun tidak mungkin
+    saling menimpa. Tiap berkas juga divalidasi terhadap tahun yang tertulis di
+    namanya: berkas dan isi yang tidak sejalan berarti file itu diedit tangan
+    atau tertimpa oleh run untuk tahun yang salah.
+    """
+    merged: dict = {"source": PAGE_URL, "entries": {}}
+    if not directory.is_dir():
+        return merged
+    for path in sorted(directory.glob(f"{CATALOG_STEM}_*.json")):
+        match = re.fullmatch(rf"{CATALOG_STEM}_(\d{{4}})\.json", path.name)
+        if match is None:
+            continue
+        file_year = int(match.group(1))
+        data = _read_catalog(path)
+        for key in data["entries"]:
+            if _year_of(key) != file_year:
+                raise CatalogError(f"{path.name}: entri {key!r} bukan tahun {file_year}")
+        merged["entries"].update(data["entries"])
+    return merged
+
+
+def save_catalogs(
+    directory: Path,
+    catalog: dict,
+    source_for: Callable[[int], str],
+) -> list[Path]:
+    """Tulis katalog yang sudah terpecah per tahun, masing-masing atomik.
+
+    Berkas yang isinya tidak berubah **tidak disentuh sama sekali**. Itulah
+    gunanya dipisah per tahun: tahun yang sudah selesai dibekukan, `updated_at`
+    sebuah tahun hanya bergerak kalau entri tahun itu sendiri berubah, dan run
+    tahun lain tidak pernah mengotori git-nya.
+
+    Kembalikan daftar berkas yang benar-benar tertulis.
+    """
+    by_year: dict[int, dict] = {}
+    for key, entry in catalog.get("entries", {}).items():
+        by_year.setdefault(_year_of(key), {})[key] = entry
+
+    written: list[Path] = []
+    for year, entries in sorted(by_year.items()):
+        source = source_for(year)
+        path = catalog_path(year, directory)
+        if _already(path, entries):
+            continue
+        payload = {
+            "source": source,
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "entries": entries,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(path.suffix + ".tmp")
+        with temp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+        temp.replace(path)
+        written.append(path)
+    return written
+
+
+def _already(path: Path, entries: dict) -> bool:
+    """True bila berkas di disk sudah berisi persis `entries`.
+
+    `source` dan `updated_at` sengaja tidak dibandingkan: satu tahun yang
+    tidak disentuh tidak boleh ditulis ulang sekecil apa pun -- bukan untuk
+    `updated_at` yang bergerak, dan bukan untuk urutan parameter URL yang
+    berubah hanya karena kami menuliskannya ulang. `source_for` menghitung
+    `source` baru bila memang ada entri yang berubah; bila tidak, berkas lama
+    -- termasuk string `source`-nya -- beku persis.
+    """
+    if not path.is_file():
+        return False
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(current, dict):
+        return False
+    return current.get("entries") == entries
 
 
 def scan_all_pages(catalog: dict, args: argparse.Namespace) -> tuple[int, int, int] | None:
@@ -471,13 +554,23 @@ def scan_all_pages(catalog: dict, args: argparse.Namespace) -> tuple[int, int, i
     return totals, added, updated
 
 
-def entries_from_api(document: object) -> dict[str, dict]:
-    """Peta `TAHUN|EMITEN` -> entri dasar, dibaca dari respons `GetFinancialReport`.
+def entries_from_api(document: object) -> tuple[dict[str, dict], list[str]]:
+    """Peta `TAHUN|EMITEN` -> entri dasar, plus daftar baris yang dilewati.
 
     Berkasnya datang dari unduhan manual: Python tidak bisa menembus
     Cloudflare sendiri (HTTP 403, sudah diuji), dan jalur `page_text` bridge
     tidak berjalan pada dokumen `application/json`. Karena itu pengambilan
     berkas sengaja berada di luar program -- lihat rencana-katalog.md §2.4.
+
+    Baris tanpa lampiran `instance.zip` **dilewati, bukan ditolak**: IDX bisa
+    menerbitkan laporan tahunan tanpa arsip itu (BINA 2024 hanya punya PDF),
+    dan satu baris begitu tidak berhak mematikan import 884 baris lain.
+
+    Keduanya tetap dibedakan oleh hasil akhirnya. Bila tidak ada satu pun yang
+    punya `instance.zip`, berarti file ini bukan respons GetFinancialReport
+    yang benar -- itu kegagalan, bukan data yang jujur.
+
+    Kembalikan `(entri, ["EMITEN TAHUN", ...])`.
     """
     if not isinstance(document, dict):
         raise CatalogError("file API bukan objek JSON")
@@ -488,6 +581,7 @@ def entries_from_api(document: object) -> dict[str, dict]:
         )
 
     found: dict[str, dict] = {}
+    skipped: list[str] = []
     for index, row in enumerate(results):
         if not isinstance(row, dict):
             raise CatalogError(f"Results[{index}] bukan objek")
@@ -512,7 +606,8 @@ def entries_from_api(document: object) -> dict[str, dict]:
                 path = str(item.get("File_Path") or "")
                 break
         if not path:
-            raise CatalogError(f"{code} {year}: tidak ada instance.zip di Attachments")
+            skipped.append(f"{code} {year}")
+            continue
 
         key = f"{year}|{code}"
         if key in found:
@@ -531,8 +626,13 @@ def entries_from_api(document: object) -> dict[str, dict]:
         }
 
     if not found:
+        if skipped:
+            raise CatalogError(
+                f"tidak ada satu pun instance.zip di Results ({len(skipped)} baris "
+                "tanpa lampiran) -- file ini bukan respons GetFinancialReport"
+            )
         raise CatalogError("Results kosong")
-    return found
+    return found, skipped
 
 
 def import_from_api(
@@ -556,7 +656,9 @@ def import_from_api(
     except json.JSONDecodeError as exc:
         raise CatalogError(f"{path} bukan JSON valid: {exc}") from exc
 
-    found = entries_from_api(document)
+    found, skipped = entries_from_api(document)
+    for item in skipped:
+        _log(f"lewati {item}: tidak ada instance.zip di Attachments")
     if args.years:
         wanted = {chunk.strip() for chunk in args.years.split(",") if chunk.strip()}
         available = sorted({str(item["year"]) for item in found.values()})
@@ -576,10 +678,10 @@ def import_from_api(
 
 
 def run(args: argparse.Namespace) -> int:
-    output = Path(args.output)
-    catalog = load_catalog(output)
+    directory = Path(args.output)
+    catalog = load_catalogs(directory)
     existing = len(catalog.get("entries", {}))
-    _log(f"membaca {existing} entri lama dari {output}")
+    _log(f"membaca {existing} entri lama dari {directory}/{CATALOG_STEM}_*.json")
 
     now = datetime.now().astimezone().isoformat(timespec="seconds")
     if args.source == "api":
@@ -591,13 +693,26 @@ def run(args: argparse.Namespace) -> int:
         totals, added, updated = scanned
 
     if args.dry_run:
-        _log(f"DRY RUN: {totals} entri terbaca, {added} baru, {updated} berubah; katalog tidak ditulis")
+        _log(
+            f"DRY RUN: {totals} entri terbaca, {added} baru, {updated} berubah; "
+            "katalog tidak ditulis"
+        )
         return 0
 
-    save_catalog(output, catalog)
+    def source_for(year: int) -> str:
+        """Asal usul satu berkas katalog.
+
+        Satu tahun berarti satu panggilan API, jadi satu URL saja sudah jujur
+        -- tidak perlu `sources` bersarang yang menampung dua permintaan
+        berbeda di dalam satu string.
+        """
+        return API_URL.format(year=year) if args.source == "api" else PAGE_URL
+
+    written = save_catalogs(directory, catalog, source_for)
+    target = ", ".join(path.name for path in written) or "tidak ada"
     _log(
         f"selesai: {totals} entri terbaca, {added} baru, {updated} berubah, "
-        f"{len(catalog['entries'])} total tersimpan di {output}"
+        f"{len(catalog['entries'])} total; ditulis: {target}"
     )
     return 0
 
@@ -626,7 +741,14 @@ def main(argv: list[str] | None = None) -> int:
             "(wajib bila --source api); contoh: --api-file GetFinancialReport.json"
         ),
     )
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="path katalog JSON")
+    parser.add_argument(
+        "--output",
+        default=str(CATALOG_DIR),
+        help=(
+            "direktori katalog; satu berkas instance_catalog_<tahun>.json "
+            "per tahun pelaporan (default: db/)"
+        ),
+    )
     parser.add_argument("--max-pages", type=int, default=0, help="batas halaman per tahun (0 = tanpa batas)")
     parser.add_argument("--delay", type=float, default=1.0, help="jeda minimum antar halaman (detik)")
     parser.add_argument("--delay-max", type=float, default=2.0, help="jeda maksimum antar halaman (detik)")

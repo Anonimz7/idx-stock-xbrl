@@ -269,7 +269,7 @@ def download_instance(
     root = instance_download_dir(download_dir)
     href = validate_instance_url(href, code, year)
 
-    history = load_download_history(root)
+    history = load_download_history(root, year=year)
     final_path = instance_final_path(code, year, root)
     recorded = history_entry(history, code, year, AUDITED_QUARTER)
     integrity_failed = False
@@ -414,7 +414,7 @@ def download_instance(
     wait_before_step("jeda sebelum memindahkan file")
     move_completed_download(staging_path, final_path, replace=integrity_failed)
     wait_before_step("jeda sebelum menulis JSON")
-    history = load_download_history(root)
+    history = load_download_history(root, year=year)
     history_path = record_download_history(
         history, code, year, AUDITED_QUARTER, href, final_path, root,
     )

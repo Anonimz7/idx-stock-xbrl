@@ -95,7 +95,7 @@ def test_a_full_download_writes_no_token_to_log_history_or_console(
     assert _log_dir.is_file(), "the run produced no log file to inspect"
     surfaces = {
         "logs/bridge.log": _log_dir.read_text(encoding="utf-8"),
-        "download_history.json": download_history_path(tmp_path).read_text(encoding="utf-8"),
+        "download_history_2025.json": download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"),
         "stdout": capsys.readouterr().out,
         "stderr": capsys.readouterr().err,
     }
@@ -136,7 +136,7 @@ def test_history_entries_describe_files_and_carry_no_secret_shaped_field(
     download_detected_link(  # type: ignore[arg-type]
         Client(tmp_path), "1", "NCKL", 2025, {"ref": "e1", "href": HREF}, tmp_path
     )
-    text = download_history_path(tmp_path).read_text(encoding="utf-8").lower()
+    text = download_history_path(tmp_path, year=2025).read_text(encoding="utf-8").lower()
 
     for forbidden in ("token", "authorization", "bearer", "password", "secret"):
         assert forbidden not in text, f"history contains a {forbidden!r} field"

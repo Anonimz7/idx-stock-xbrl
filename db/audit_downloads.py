@@ -11,8 +11,13 @@ katalog berisi entri yang tak pernah disentuh, atau sebaliknya.
 Tiga sumber dibandingkan:
 
 1. katalog            -- arsip yang IDX terbitkan, dibekukan ``idx_watcher``
-2. ``download_history.json``  -- catatan sukses/gagal per emiten per tahun
+2. riwayat unduhan    -- catatan sukses/gagal per emiten per tahun
 3. folder unduhan di disk     -- berkas yang benar-benar ada
+
+Ketiganya diambil per tahun: ``instance_catalog_<tahun>.json`` dan
+``download_history_<tahun>.json``. Satu tahun jadi satu berkas, jadi audit
+2024 tidak mungkin mengukur 2025 dengan tidak sengaja, dan laporan satu tahun
+bisa disimpan tanpa menimpa laporan tahun lain.
 
 Status dibaca apa adanya: entri tanpa field ``status`` berarti sukses (punya
 ``sha256``), ``status=failed`` adalah kegagalan. Skrip ini murni laporan.
@@ -28,7 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from firefox_bridge.instance.catalog import CatalogError, load_entries
+from firefox_bridge.downloader.paths import history_filename
+from firefox_bridge.instance.catalog import CatalogError, catalog_path, load_entries
 
 SUCCESS_KEYS = ("sha256", "file")
 
@@ -95,21 +101,36 @@ def main(argv: list[str] | None = None) -> int:
     here = Path(__file__).resolve().parent
     base = Path.home() / "Downloads" / "instance" / "saham"
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--catalog", type=Path, default=here / "instance_catalog.json")
-    p.add_argument("--history", type=Path, default=base / "download_history.json")
+    p.add_argument(
+        "--catalog",
+        type=Path,
+        default=None,
+        help="katalog tahun berjalan (default: db/instance_catalog_<year>.json)",
+    )
+    p.add_argument(
+        "--history",
+        type=Path,
+        default=None,
+        help="riwayat tahun berjalan (default: <saham>/download_history_<year>.json)",
+    )
     p.add_argument("--download-dir", type=Path, default=base)
     p.add_argument("--year", type=int, default=2025)
     p.add_argument("--show-all", action="store_true")
     p.add_argument("--first", type=int, default=40, help="baris tabel yang ditampilkan")
     args = p.parse_args(argv)
 
-    for label, path in (("--catalog", args.catalog), ("--history", args.history)):
+    # Kedua berkas ini bernama menurut `--year`, dan `--year` baru diketahui
+    # setelah parse_args -- sebabnya defaultnya `None` dan bukan path tetap.
+    catalog = catalog_path(args.year, here) if args.catalog is None else args.catalog
+    history = base / history_filename(args.year) if args.history is None else args.history
+
+    for label, path in (("--catalog", catalog), ("--history", history)):
         if not path.exists():
             print(f"ERROR: {label} tidak ditemukan: {path}", file=sys.stderr)
             return 2
 
     try:
-        rows, meta, orphan = audit(args.catalog, args.history, args.download_dir, args.year)
+        rows, meta, orphan = audit(catalog, history, args.download_dir, args.year)
     except CatalogError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
@@ -125,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print("=" * 78)
     print(f"AUDIT UNDUHAN instance.zip  -- tahun {args.year}")
-    print(f"katalog      : {args.catalog}")
+    print(f"katalog      : {catalog}")
+    print(f"riwayat      : {history}")
     print(f"  entri      : {meta['entries']}")
     print(f"  diperbarui : {meta['updated_at']}")
     print(f"  sumber     : {meta['source']}")

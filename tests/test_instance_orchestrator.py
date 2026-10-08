@@ -20,7 +20,7 @@ import pytest
 from firefox_bridge.downloader.errors import DownloadTimeout
 from firefox_bridge.downloader.history import load_download_history
 from firefox_bridge.downloader.integrity import file_sha256
-from firefox_bridge.downloader.paths import download_root, report_filename
+from firefox_bridge.downloader.paths import download_history_path, download_root, report_filename
 from firefox_bridge.downloader.retry import RETRY_ATTEMPTS, is_retryable
 from firefox_bridge.instance import (
     instance_download_dir,
@@ -67,7 +67,7 @@ def _write_report(root: Path, stock: str, payload: str = "original") -> Path:
 
 def _record(root: Path, stock: str, path: Path, href: str | None = None) -> None:
     """Write the history entry a completed download would have produced."""
-    history = load_download_history(root)
+    history = load_download_history(root, year=YEAR)
     history["downloads"].setdefault(stock, {}).setdefault(str(YEAR), {})["4"] = {
         "url": href or instance_url(stock, YEAR),
         "file": path.relative_to(root).as_posix(),
@@ -77,13 +77,13 @@ def _record(root: Path, stock: str, path: Path, href: str | None = None) -> None
         "integrity_status": "verified",
         "completed_at": "2025-01-01T00:00:00+00:00",
     }
-    target = root / "saham" / "download_history.json"
+    target = download_history_path(root, year=YEAR)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(history), encoding="utf-8")
 
 
 def _recorded_hash(root: Path, stock: str) -> str:
-    entry = load_download_history(root)["downloads"][stock][str(YEAR)]["4"]
+    entry = load_download_history(root, year=YEAR)["downloads"][stock][str(YEAR)]["4"]
     return str(entry["sha256"])
 
 
@@ -98,7 +98,7 @@ def _record_failure(
     that used to be missing -- the recorded ``reason`` deciding whether that
     second attempt is worth making.
     """
-    history = load_download_history(root)
+    history = load_download_history(root, year=YEAR)
     history["downloads"].setdefault(stock, {}).setdefault(str(YEAR), {})["4"] = {
         "url": href or instance_url(stock, YEAR),
         "status": "failed",
@@ -107,7 +107,7 @@ def _record_failure(
         "fail_count": 1,
         "failed_at": "2026-10-07T00:00:00+00:00",
     }
-    target = root / "saham" / "download_history.json"
+    target = download_history_path(root, year=YEAR)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(history), encoding="utf-8")
 
@@ -275,12 +275,12 @@ def test_unrecorded_file_is_skipped_and_the_history_is_completed(
     duplication the resume mechanism prevents.
     """
     path = _write_report(instance_root, "NCKL")
-    assert not (instance_root / "saham" / "download_history.json").exists()
+    assert not (instance_root / "saham" / "download_history_2025.json").exists()
 
     result = download_instance(_RefusingClient(), "NCKL", YEAR, HREF)
 
     assert result.skipped
-    entry = load_download_history(instance_root)["downloads"]["NCKL"][str(YEAR)]["4"]
+    entry = load_download_history(instance_root, year=YEAR)["downloads"]["NCKL"][str(YEAR)]["4"]
     assert entry["url"] == instance_url("NCKL", YEAR)
     assert entry["sha256"] == file_sha256(path)
 
@@ -293,8 +293,8 @@ def test_history_lives_under_the_instance_root_not_the_page_flow_root(
     _record(instance_root, "NCKL", path)
 
     page_flow = instance_root.parent
-    assert (instance_root / "saham" / "download_history.json").is_file()
-    assert not (page_flow / "saham" / "download_history.json").exists()
+    assert (instance_root / "saham" / "download_history_2025.json").is_file()
+    assert not (page_flow / "saham" / "download_history_2025.json").exists()
 
 
 def test_a_second_run_skips_instead_of_downloading_twice(

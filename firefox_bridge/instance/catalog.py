@@ -33,6 +33,27 @@ HINT = (
 )
 
 
+# One year, one file -- and the naming convention lives here, in exactly one
+# place. The writer (idx_watcher) and the reader (this package's CLI) both
+# import it: two independently maintained defaults would make "the command
+# from the README found nothing" the normal outcome, which is the specific
+# failure the old comment on DEFAULT_CATALOG existed to prevent.
+CATALOG_STEM = "instance_catalog"
+CATALOG_DIR = Path(__file__).resolve().parent.parent.parent / "db"
+
+
+def catalog_path(year: int, directory: Path | None = None) -> Path:
+    """Return the catalog file for one reporting year.
+
+    Split per year because a finished year should be frozen: a run for 2024
+    writes ``instance_catalog_2024.json`` and leaves 2025's file byte-for-byte
+    alone. It also lets ``source`` record the single request that produced
+    this file's entries, instead of two different API calls having to share
+    one string.
+    """
+    return (directory or CATALOG_DIR) / f"{CATALOG_STEM}_{year}.json"
+
+
 class CatalogError(Exception):
     """The catalog cannot be read, or one of its entries is unusable."""
 
@@ -101,4 +122,4 @@ def divergent(entries: list[tuple[str, str]], year: int) -> list[str]:
     return [code for code, url in entries if url != instance_url(code, year)]
 
 
-__all__ = ["CatalogError", "divergent", "load_entries"]
+__all__ = ["CATALOG_DIR", "CATALOG_STEM", "CatalogError", "catalog_path", "divergent", "load_entries"]

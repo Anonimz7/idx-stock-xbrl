@@ -112,7 +112,7 @@ Add-Type -Namespace Win32 -Name R -MemberDefinition '[DllImport("ntdll.dll")] pu
 ```
 
 **Bila prosesnya sudah mati**, jalankan ulang perintah di tabel —
-`download_history.json` menjamin tidak ada yang diunduh dua kali.
+`download_history_<year>.json` menjamin tidak ada yang diunduh dua kali.
 
 Bridge boleh dihidupkan ulang **tanpa** memutus run: extension 0.1.8
 menyambung sendiri lagi, terbukti dari `STEP 0.5: extension 0.1.8 (siap)`
@@ -144,7 +144,7 @@ python -m idx_watcher.instance_catalog                        # semua tahun yang
 python -m idx_watcher.instance_catalog --years 2025 --dry-run # tanpa menulis
 ```
 
-Keluaran: `db/instance_catalog.json`, kunci `TAHUN|EMITEN`:
+Keluaran: `db/instance_catalog_<year>.json` (satu berkas per tahun), kunci `TAHUN|EMITEN`:
 
 ```json
 "2025|AADI": {
@@ -360,7 +360,7 @@ sekitar ±40-an dari 785.
 | `File_Path` API vs URL yang kita susun, seluruh katalog | **890 identik, 0 berbeda** |
 
 Uji terakhir itu yang paling kuat: seluruh 890 baris `File_Path` dari API
-**identik string** dengan URL yang tersimpan di `download_history.json`.
+**identik string** dengan URL yang tersimpan di `download_history_<year>.json`.
 Jadi bukan hanya "unduhannya berhasil", tetapi URL-nya memang sama dengan
 yang IDX sendiri catat.
 
@@ -370,7 +370,7 @@ Metode langkahnya (dipakai, lalu digantikan API — lihat §2.4):
 
 1. `python -m idx_watcher.instance_catalog --years 2025`
 2. Ambil semua kode berstatus `404 Not Found` dari
-   `C:\Users\ORCA\Downloads\instance\saham\download_history.json` (field
+   `C:\Users\ORCA\Downloads\instance\saham\download_history_<year>.json` (field
    `failed_at` + `reason == "404 Not Found"`).
 3. Cocokkan: `kunci = f"2025|{KODE}"`.
 
@@ -471,7 +471,7 @@ baris dan katalog yang sudah berisi 890 entri):
 ```
 $ python -m idx_watcher.instance_catalog --source api \
       --api-file C:\Users\ORCA\Downloads\GetFinancialReport.json --dry-run
-[15:25:22] membaca 890 entri lama dari ...\db\instance_catalog.json
+[15:25:22] membaca 890 entri lama dari ...\db\instance_catalog_*.json
 [15:25:22] API: 890 entri dari GetFinancialReport.json (0 baru, 0 berubah)
 [15:25:22] DRY RUN: 890 entri terbaca, 0 baru, 0 berubah; katalog tidak ditulis
 EXIT = 0
@@ -489,8 +489,9 @@ baseline, nol dari file yang disentuh; `mypy idx_watcher` **Success**.
 
 `firefox_bridge/instance/cli.py` tidak lagi menerima `--stocks` /
 `--stocks-file`. Daftar datang dari `--catalog`, default
-`db/instance_catalog.json` — path yang sama dengan yang ditulis `idx_watcher`,
-sehingga perintah tanpa argumen pun menemukannya.
+`db/instance_catalog_<year>.json` (diselesaikan dari `--year`) — path yang sama
+dengan yang ditulis `idx_watcher`, sehingga perintah tanpa argumen pun
+menemukannya.
 
 Butir per butir terhadap rencana awal:
 
@@ -536,7 +537,7 @@ drift (890/890 URL katalog cocok dengan pola terbitan `instance_url`).
 
 Semua ini pernah memakan waktu dalam sesi ini. Jangan diulangi.
 
-1. **Timestamp di `download_history.json` adalah UTC** (`+00:00`), sedangkan
+1. **Timestamp di `download_history_<year>.json` adalah UTC** (`+00:00`), sedangkan
    jam lokal WIB (UTC+7). `08:45:10+00:00` = 15:45 WIB. Ini sempat membuat
    run tampak "jalan 8 jam" padahal 1 jam; dan membuat ETA salah dibaca.
    Selalu konversi sebelum membandingkan dengan log atau `Get-Date`.
