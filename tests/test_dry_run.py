@@ -111,7 +111,7 @@ def test_an_incomplete_history_entry_is_flagged_as_needing_an_update(tmp_path: P
     path = recorded(tmp_path)
     history = empty_history()
     history["downloads"]["NCKL"] = {"2025": {"1": {
-        "url": None, "file": "saham/NCKL/2025/NCKL_inlineXBRL_T1_2025.zip",
+        "url": None, "file": "saham/2025/NCKL/NCKL_inlineXBRL_T1_2025.zip",
         "size": path.stat().st_size, "sha256": "", "duplicate_of": None,
         "integrity_status": "verified", "completed_at": "whenever",
     }}}
@@ -243,7 +243,7 @@ def _explode(*_args: Any, **_kwargs: Any) -> Any:
 def test_dry_run_leaves_the_staging_folder_alone(
     _patched: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    stale = staging_root(tmp_path) / "NCKL" / "2025" / "NCKL_inlineXBRL_T1_2025.zip"
+    stale = staging_root(tmp_path) / "2025" / "NCKL" / "NCKL_inlineXBRL_T1_2025.zip"
     stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_bytes(b"partial wreckage")
 

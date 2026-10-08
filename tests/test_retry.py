@@ -417,7 +417,7 @@ def test_the_path_firefox_actually_used_is_the_one_cleaned(
     the reported path has to be the one that is discarded, and the one that gets
     moved to the final folder.
     """
-    other = "saham/staging/NCKL/2025/NCKL_inlineXBRL_T1_2025 (1).zip"
+    other = "saham/staging/2025/NCKL/NCKL_inlineXBRL_T1_2025 (1).zip"
     client = ScriptedClient(tmp_path, [DownloadTimeout("lambat")], report_name=other)
 
     download_detected_link(  # type: ignore[arg-type]

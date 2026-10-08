@@ -78,7 +78,7 @@ def audit(catalog_path: Path, history_path: Path, dl_dir: Path, year: int):
             fail_count = int(q4.get("fail_count") or 0)
         else:
             status, fail_count = "unrecorded", 0
-        rows.append(Row(pos, ticker, status, fail_count, (dl_dir / ticker).exists()))
+        rows.append(Row(pos, ticker, status, fail_count, (dl_dir / str(year) / ticker).exists()))
 
     for r in rows:
         if r.status == "verified" and not r.on_disk:

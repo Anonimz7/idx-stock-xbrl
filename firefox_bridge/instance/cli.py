@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Root directory for downloaded archives "
             "(default: $FIREFOX_BRIDGE_INSTANCE_DIR or <default>/instance). "
             "Kept separate from the page-driven program's root so their histories "
-            "cannot collide. Files are saved under <dir>/saham/<STOCK>/<YEAR>/."
+            "cannot collide. Files are saved under <dir>/saham/<YEAR>/<STOCK>/."
         ),
     )
     parser.add_argument(

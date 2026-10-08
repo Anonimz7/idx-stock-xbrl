@@ -66,7 +66,7 @@ def instance_report_filename(stock: str, year: int) -> str:
 def instance_relative_path(stock: str, year: int) -> str:
     """Return the history-friendly path of one report, relative to the root."""
     code = normalize_stock_code(stock)
-    return f"{SAHAM_FOLDER}/{code}/{year}/{instance_report_filename(code, year)}"
+    return f"{SAHAM_FOLDER}/{year}/{code}/{instance_report_filename(code, year)}"
 
 
 def instance_final_path(
@@ -89,7 +89,7 @@ def instance_staging_relative_filename(stock: str, year: int) -> str:
     """
     code = normalize_stock_code(stock)
     filename = instance_report_filename(code, year)
-    return f"{SAHAM_FOLDER}/{STAGING_FOLDER}/{code}/{year}/{filename}"
+    return f"{SAHAM_FOLDER}/{STAGING_FOLDER}/{year}/{code}/{filename}"
 
 
 def instance_staging_root() -> Path:
@@ -117,7 +117,7 @@ def instance_staging_path(
     one.
     """
     code = normalize_stock_code(stock)
-    return instance_staging_root() / code / str(year) / instance_report_filename(code, year)
+    return instance_staging_root() / str(year) / code / instance_report_filename(code, year)
 
 
 __all__ = [

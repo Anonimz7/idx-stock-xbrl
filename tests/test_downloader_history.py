@@ -44,16 +44,16 @@ CONTENT = b"PK\x03\x04test"
 def test_resolve_output_path_is_anti_duplicate(tmp_path: Path) -> None:
     folder, relative = resolve_output_path("nckl", 2025, 1, tmp_path)
 
-    assert folder == tmp_path / "saham" / "NCKL" / "2025"
+    assert folder == tmp_path / "saham" / "2025" / "NCKL"
     assert folder.is_dir()
-    assert relative == "saham/NCKL/2025/NCKL_inlineXBRL_T1_2025.zip"
+    assert relative == "saham/2025/NCKL/NCKL_inlineXBRL_T1_2025.zip"
     assert (folder / Path(relative).name).name == "NCKL_inlineXBRL_T1_2025.zip"
 
 
 def test_staging_path_avoids_leading_dot(tmp_path: Path) -> None:
     relative = staging_relative_filename("NCKL", 2025, 4)
 
-    assert relative == "saham/staging/NCKL/2025/NCKL_inlineXBRL_T4_2025.zip"
+    assert relative == "saham/staging/2025/NCKL/NCKL_inlineXBRL_T4_2025.zip"
     assert not relative.startswith(".")
     assert staging_report_path("NCKL", 2025, 4, tmp_path) == tmp_path / relative
 
@@ -169,7 +169,7 @@ def test_record_download_history_stores_hash_and_size(tmp_path: Path) -> None:
     saved = json.loads(path.read_text(encoding="utf-8"))
     entry = saved["downloads"]["NCKL"]["2025"]["1"]
 
-    assert entry["file"] == "saham/NCKL/2025/NCKL_inlineXBRL_T1_2025.zip"
+    assert entry["file"] == "saham/2025/NCKL/NCKL_inlineXBRL_T1_2025.zip"
     assert entry["size"] == len(CONTENT)
     assert entry["sha256"] == hashlib.sha256(CONTENT).hexdigest()
     assert entry["duplicate_of"] is None

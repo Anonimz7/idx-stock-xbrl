@@ -238,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Root directory for downloaded reports "
             "(default: $FIREFOX_BRIDGE_DOWNLOAD_DIR or ~/Downloads). "
-            "Files are saved under <dir>/saham/<STOCK>/<YEAR>/."
+            "Files are saved under <dir>/saham/<YEAR>/<STOCK>/."
         ),
     )
     return parser

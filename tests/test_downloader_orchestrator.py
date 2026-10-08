@@ -104,7 +104,7 @@ def test_download_detected_link_moves_file_and_json_skips_next_run(
         tmp_path,
     )
 
-    final_path = tmp_path / "saham" / "NCKL" / "2025" / "NCKL_inlineXBRL_T1_2025.zip"
+    final_path = tmp_path / "saham" / "2025" / "NCKL" / "NCKL_inlineXBRL_T1_2025.zip"
     history = json.loads(download_history_path(tmp_path, year=2025).read_text(encoding="utf-8"))
     entry = history["downloads"]["NCKL"]["2025"]["1"]
 
@@ -114,7 +114,7 @@ def test_download_detected_link_moves_file_and_json_skips_next_run(
     assert not (tmp_path / staging_relative_filename("NCKL", 2025, 1)).exists()
     assert client.downloads == ["e1"]
     assert entry["url"] == HREF
-    assert entry["file"] == "saham/NCKL/2025/NCKL_inlineXBRL_T1_2025.zip"
+    assert entry["file"] == "saham/2025/NCKL/NCKL_inlineXBRL_T1_2025.zip"
     assert entry["size"] == len(CONTENT)
     assert entry["sha256"] == hashlib.sha256(CONTENT).hexdigest()
     assert entry["duplicate_of"] is None

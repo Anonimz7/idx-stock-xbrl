@@ -1,6 +1,6 @@
 """The staging folder is scratch space, and scratch space gets cleared.
 
-Firefox writes a report into `saham/staging/<STOCK>/<YEAR>/` and Python moves it
+Firefox writes a report into `saham/staging/<YEAR>/<STOCK>/` and Python moves it
 to its final home afterwards. A run killed between those two steps leaves a
 partial file behind, and the next run finds it at exactly the path it is about to
 download to.

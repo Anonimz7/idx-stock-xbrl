@@ -4,7 +4,7 @@ The downloader moves bytes from a web page into a folder on disk, which means
 three separate places where untrusted text becomes a real file. Each one is
 checked here, and each check exists because the next stage trusts its input:
 
-* A stock code becomes ``saham/<CODE>/<YEAR>/`` -- so ``..`` or a separator
+* A stock code becomes ``saham/<YEAR>/<CODE>/`` -- so ``..`` or a separator
   would write outside the download root.
 * An ``href`` read from the page becomes the URL Firefox fetches -- so an
   off-host link would be downloaded as though IDX had published it.

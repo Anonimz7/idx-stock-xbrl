@@ -27,7 +27,7 @@ Menjadikan sistem yang sudah tervalidasi secara fungsional menjadi fondasi produ
 | Delay minimal 1 detik pada setiap langkah | Tervalidasi | Output `WAIT` |
 | Reuse satu tab profil | Tervalidasi | Satu tab digunakan untuk beberapa stock |
 | Download melalui Firefox staging | Tervalidasi | Cookies/session IDX tetap terpakai |
-| Pemindahan file oleh Python | Tervalidasi | `saham/<STOCK>/<YEAR>/` |
+| Pemindahan file oleh Python | Tervalidasi | `saham/<YEAR>/<STOCK>/` |
 | History JSON | Tervalidasi | `download_history_<year>.json` |
 | Skip berdasarkan history | Tervalidasi | 4 link dilewati tanpa download ulang |
 | SHA-256 dan duplicate check | Tervalidasi | 4 hash unik |
@@ -834,7 +834,7 @@ setiap tahap mempercayai input dari tahap sebelumnya, dan sebelumnya setiap mata
 rantainya kosong.
 
 ```
-stock code dari CLI  ──►  SEC-003  ──►  saham/<CODE>/<YEAR>/
+stock code dari CLI  ──►  SEC-003  ──►  saham/<YEAR>/<CODE>/
 href dari halaman    ──►  SEC-004  ──►  URL yang di-fetch
 byte dari download   ──►  SEC-005  ──►  arsip yang masuk folder final
 token / Authorization──►  SEC-006  ──►  tidak pernah tercetak

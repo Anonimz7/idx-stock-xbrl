@@ -56,14 +56,14 @@ def resolve_output_path(
     """Build the destination folder and relative filename for a report.
 
     Returns ``(folder_path, relative_filename)`` where ``folder_path`` is the
-    final directory ``<root>/saham/<STOCK>/<YEAR>/`` and ``relative_filename`` is
+    final directory ``<root>/saham/<YEAR>/<STOCK>/`` and ``relative_filename`` is
     relative to ``<root>`` as stored in the history JSON.
     """
     code = normalize_stock_code(stock)
-    folder = download_root(download_dir) / SAHAM_FOLDER / code / str(year)
+    folder = download_root(download_dir) / SAHAM_FOLDER / str(year) / code
     folder.mkdir(parents=True, exist_ok=True)
     filename = report_filename(code, year, quarter)
-    relative_filename = f"{SAHAM_FOLDER}/{code}/{year}/{filename}"
+    relative_filename = f"{SAHAM_FOLDER}/{year}/{code}/{filename}"
     return folder, relative_filename
 
 
@@ -82,7 +82,7 @@ def staging_relative_filename(stock: str, year: int, quarter: int) -> str:
     """Return the Firefox-relative staging path for one report."""
     code = normalize_stock_code(stock)
     filename = report_filename(code, year, quarter)
-    return f"{SAHAM_FOLDER}/{STAGING_FOLDER}/{code}/{year}/{filename}"
+    return f"{SAHAM_FOLDER}/{STAGING_FOLDER}/{year}/{code}/{filename}"
 
 
 def staging_report_path(

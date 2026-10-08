@@ -50,7 +50,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch, results: list[DownloadResult]) -> No
 
 def _result(quarter: int = 1, status: str = STATUS_DOWNLOADED) -> DownloadResult:
     return DownloadResult(
-        stock="NCKL", href=HREF, filename=f"C:/saham/NCKL/2025/NCKL_T{quarter}_2025.zip",
+        stock="NCKL", href=HREF, filename=f"C:/saham/2025/NCKL/NCKL_T{quarter}_2025.zip",
         status=status, year=2025, quarter=quarter,
         sha256="a" * 64, bytes=243904, attempts=1,
     )

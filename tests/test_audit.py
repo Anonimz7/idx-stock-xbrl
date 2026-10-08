@@ -107,7 +107,7 @@ def test_a_file_matching_its_hash_but_not_a_zip_is_corrupt(tmp_path: Path) -> No
     history = empty_history()
     import hashlib
 
-    relative = "saham/NCKL/2025/NCKL_inlineXBRL_T1_2025.zip"
+    relative = "saham/2025/NCKL/NCKL_inlineXBRL_T1_2025.zip"
     history["downloads"]["NCKL"] = {"2025": {"1": {
         "url": HREF, "file": relative, "size": path.stat().st_size,
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -168,7 +168,7 @@ def test_verify_writes_nothing(tmp_path: Path) -> None:
 
 def test_a_file_named_like_nothing_recognisable_is_ignored(tmp_path: Path) -> None:
     """A stray zip must not be filed under a guessed stock code."""
-    stray = tmp_path / "saham" / "NCKL" / "2025" / "notes.zip"
+    stray = tmp_path / "saham" / "2025" / "NCKL" / "notes.zip"
     stray.parent.mkdir(parents=True, exist_ok=True)
     stray.write_bytes(real_zip())
 
@@ -319,7 +319,7 @@ def test_verify_points_the_saham_itself_out_as_a_wrong_root(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """The mistake this guard exists for: passing `...\\saham` instead of its parent."""
-    (tmp_path / "saham" / "NCKL" / "2025").mkdir(parents=True)
+    (tmp_path / "saham" / "2025" / "NCKL").mkdir(parents=True)
 
     code = run(["--history", "verify", "--download-dir", str(tmp_path / "saham")])
 

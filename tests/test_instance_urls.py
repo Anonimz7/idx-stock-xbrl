@@ -112,12 +112,12 @@ def test_report_filename_is_not_mistaken_for_inline_xbrl() -> None:
 
 def test_final_path_sits_under_the_saham_layout() -> None:
     path = instance_final_path("NCKL", 2025, "C:/root")
-    assert path.as_posix().endswith("saham/NCKL/2025/NCKL_instance_T4_2025.zip")
+    assert path.as_posix().endswith("saham/2025/NCKL/NCKL_instance_T4_2025.zip")
 
 
 def test_staging_path_is_relative_to_the_root_not_absolute() -> None:
     rel = instance_staging_relative_filename("NCKL", 2025)
-    assert rel == "saham/staging/NCKL/2025/NCKL_instance_T4_2025.zip"
+    assert rel == "saham/staging/2025/NCKL/NCKL_instance_T4_2025.zip"
     assert not rel.startswith("/")
 
 

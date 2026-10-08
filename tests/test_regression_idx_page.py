@@ -73,8 +73,8 @@ def test_captured_page_has_no_reports_for_another_year(
 
 def test_final_and_staging_paths_are_derived_per_quarter(tmp_path: Path) -> None:
     assert final_report_path("NCKL", 2025, 4, tmp_path) == (
-        tmp_path / "saham" / "NCKL" / "2025" / "NCKL_inlineXBRL_T4_2025.zip"
+        tmp_path / "saham" / "2025" / "NCKL" / "NCKL_inlineXBRL_T4_2025.zip"
     )
     assert staging_relative_filename("NCKL", 2025, 4) == (
-        "saham/staging/NCKL/2025/NCKL_inlineXBRL_T4_2025.zip"
+        "saham/staging/2025/NCKL/NCKL_inlineXBRL_T4_2025.zip"
     )

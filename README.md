@@ -293,9 +293,9 @@ into the company-code box.
   saham/
     download_history_<year>.json
     staging/
-      <STOCK>/<YEAR>/<STOCK>_inlineXBRL_T<n>_<YEAR>.zip
-    <STOCK>/
-      <YEAR>/<STOCK>_inlineXBRL_T<n>_<YEAR>.zip
+      <YEAR>/<STOCK>/<STOCK>_inlineXBRL_T<n>_<YEAR>.zip
+    <YEAR>/
+      <STOCK>/<STOCK>_inlineXBRL_T<n>_<YEAR>.zip
 ```
 
 Firefox writes into `saham/staging/...` because it rejects a path segment that
