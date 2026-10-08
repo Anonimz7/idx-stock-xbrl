@@ -350,6 +350,14 @@ def run(argv: Sequence[str] | None = None) -> int:
     try:
         session.ensure()
         for stock in stock_codes:
+            # The pause separates requests to IDX; it is not a tax on
+            # iterations that make none. True by default, so a failure --
+            # which followed a request -- and a real download are both paced;
+            # cleared only for the local-disk skip, which returned before any
+            # network call existed to pace. Paying it across ~715 no-op skips
+            # is what turned a resume into a 45-minute walk, at 3.5s each to
+            # tell IDX nothing at all.
+            pace = True
             try:
                 result = download_instance(
                     client, stock, args.year, root, session=session,
@@ -406,7 +414,9 @@ def run(argv: Sequence[str] | None = None) -> int:
                     year=args.year,
                 )
                 summary.results.append(result)
-            sleep_between_stocks(delay, args.delay_max)
+                pace = not result.skipped
+            if pace:
+                sleep_between_stocks(delay, args.delay_max)
     except CaptchaRequired as error:
         # Reached only after the operator declined or the box stayed put:
         # `CaptchaRequired` is a BaseException, so the per-stock
