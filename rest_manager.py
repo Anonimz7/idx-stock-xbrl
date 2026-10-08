@@ -31,9 +31,8 @@ BASE = os.path.join(PROJ, "downloads-2025")
 STATE_FILE = os.path.join(BASE, "rest_state.json")
 PID_FILE = os.path.join(BASE, "run.pid")
 
-START_ZIPS = 1166
 TARGET_ZIPS = 3852
-MILESTONES = [1838, 2510, 3182]  # 1166 + 672*k, k=1..3
+MILESTONES = [1838, 2510, 3182]  # 1166 (ZIP saat skrip dibuat) + 672*k, k=1..3
 REST_SECONDS = 3600
 
 

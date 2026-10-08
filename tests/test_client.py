@@ -5,7 +5,6 @@ import pytest
 from firefox_bridge.client import (
     FirefoxBridgeAuthError,
     FirefoxBridgeClient,
-    FirefoxBridgeClientError,
     FirefoxBridgeConnectionError,
     FirefoxBridgeExtensionError,
     FirefoxBridgeExtensionUnavailableError,

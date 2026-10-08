@@ -60,8 +60,10 @@ atas adalah koreksinya.
 > Karena itu peringatan **"JANGAN sentuh bridge sebelum selesai" tidak berlaku
 > lagi** — bridge bebas dimatikan/dihidupkan (sudah terbukti aman, extension
 > 0.1.8 menyambung sendiri). Yang **tetap dilarang** hanyalah **mengubah kode
-> extension**: itu menuntut reload manual dan barulah sesi putus. Perintah,
-> kueri PID, dan cara jeda di bawah tetap berlaku untuk run berikutnya.
+> extension**: itu menuntut reload manual dan barulah sesi putus. Kueri PID dan
+> cara jeda di bawah tetap berlaku untuk run berikutnya — **perintahnya tidak**:
+> `--stocks-file` sudah digantikan `--catalog` (Langkah 4), jadi baris Perintah
+> di bawah hanya riwayat.
 
 | Item | Nilai |
 | --- | --- |

@@ -1,11 +1,16 @@
-"""Audit konsistensi unduhan instance.zip terhadap daftar saham resmi.
+"""Audit konsistensi unduhan instance.zip terhadap katalog IDX.
 
-Urutan dan keanggotaan diambil dari ``read_stock_list()`` -- fungsi yang sama
+Urutan dan keanggotaan diambil dari ``load_entries()`` -- pembaca yang sama
 dipakai downloader -- sehingga hasil audit identik dengan yang dilihat runner.
+
+Sebelumnya sumbernya ``read_stock_list()`` dari dump SQL. Itu sudah salah
+sejak downloader berpindah ke katalog: auditnya mengukur keanggotaan daftar
+yang bahkan tidak lagi dipakai, jadi bisa melapor "lengkap" sementara
+katalog berisi entri yang tak pernah disentuh, atau sebaliknya.
 
 Tiga sumber dibandingkan:
 
-1. daftar saham resmi (urutan rujukan, filter ``label_delisted``)
+1. katalog            -- arsip yang IDX terbitkan, dibekukan ``idx_watcher``
 2. ``download_history.json``  -- catatan sukses/gagal per emiten per tahun
 3. folder unduhan di disk     -- berkas yang benar-benar ada
 
@@ -23,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from firefox_bridge.stocksource import read_stock_list
+from firefox_bridge.instance.catalog import CatalogError, load_entries
 
 SUCCESS_KEYS = ("sha256", "file")
 
@@ -38,15 +43,17 @@ class Row:
     issues: list[str] = field(default_factory=list)
 
 
-def audit(db_path: Path, history_path: Path, dl_dir: Path, year: int):
-    stocks = read_stock_list(db_path)
-    tickers: list[str] = list(stocks.codes)
+def audit(catalog_path: Path, history_path: Path, dl_dir: Path, year: int):
+    # Dua kali membaca berkas, sengaja. Meta (sumber API, waktu perbaruan)
+    # diambil dari dokumen mentah, sedangkan daftar emiten harus lewat
+    # load_entries -- meniru penyaringannya di sini berarti dua parser yang
+    # bisa berbeda pendapat tentang apa itu "entri tahun ini".
+    doc = json.loads(catalog_path.read_text(encoding="utf-8"))
+    tickers = [code for code, _url in load_entries(catalog_path, year)]
     meta = {
-        "source": stocks.source,
-        "skipped_delisted": stocks.skipped_delisted,
-        "skipped_invalid": stocks.skipped_invalid,
-        "skipped_duplicate": stocks.skipped_duplicate,
-        "columns": stocks.columns_seen,
+        "source": str(doc.get("source") or "(tidak tercatat)"),
+        "updated_at": str(doc.get("updated_at") or "(tidak tercatat)"),
+        "entries": len(tickers),
     }
 
     history = json.loads(history_path.read_text(encoding="utf-8"))
@@ -88,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     here = Path(__file__).resolve().parent
     base = Path.home() / "Downloads" / "instance" / "saham"
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--db", type=Path, default=here / "list_saham.sql")
+    p.add_argument("--catalog", type=Path, default=here / "instance_catalog.json")
     p.add_argument("--history", type=Path, default=base / "download_history.json")
     p.add_argument("--download-dir", type=Path, default=base)
     p.add_argument("--year", type=int, default=2025)
@@ -96,33 +103,39 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--first", type=int, default=40, help="baris tabel yang ditampilkan")
     args = p.parse_args(argv)
 
-    for label, path in (("--db", args.db), ("--history", args.history)):
+    for label, path in (("--catalog", args.catalog), ("--history", args.history)):
         if not path.exists():
             print(f"ERROR: {label} tidak ditemukan: {path}", file=sys.stderr)
             return 2
 
-    rows, meta, orphan = audit(args.db, args.history, args.download_dir, args.year)
+    try:
+        rows, meta, orphan = audit(args.catalog, args.history, args.download_dir, args.year)
+    except CatalogError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+
     flagged = [r for r in rows if r.issues]
     gaps = [r for r in rows if r.status == "unrecorded"]
     failed = [r for r in rows if r.status == "failed"]
     disk_only = [r for r in rows if r.on_disk and r.status != "verified"]
     no_file = [r for r in rows if r.status == "verified" and not r.on_disk]
 
-    # Potongan tak-terputus: urutan tercatat vs posisi DB.
+    # Potongan tak-terputus: urutan tercatat vs posisi katalog.
     recorded = [r for r in rows if r.status != "unrecorded"]
 
     print("=" * 78)
     print(f"AUDIT UNDUHAN instance.zip  -- tahun {args.year}")
-    print(f"daftar resmi : {meta['source']}")
+    print(f"katalog      : {args.catalog}")
+    print(f"  entri      : {meta['entries']}")
+    print(f"  diperbarui : {meta['updated_at']}")
+    print(f"  sumber     : {meta['source']}")
     print("=" * 78)
     print(f"Saham ikut unduhan         : {len(rows)}")
-    print(f"  tersaring delisted       : {meta['skipped_delisted']}")
-    print(f"  tersaring invalid/duplik : {meta['skipped_invalid']}/{meta['skipped_duplicate']}")
     print(f"  verified (ada sha256)    : {sum(1 for r in rows if r.status == 'verified')}")
     print(f"  failed                   : {len(failed)}")
     print(f"  tidak tercatat           : {len(gaps)}")
     print(f"Folder ada di disk         : {sum(1 for r in rows if r.on_disk)}")
-    print(f"History di luar daftar     : {len(orphan)}"
+    print(f"History di luar katalog    : {len(orphan)}"
           + (f"  -> {', '.join(orphan)}" if orphan else ""))
     print("-" * 78)
     print(f"TOTAL TIDAK KONSISTEN      : {len(flagged)}")
@@ -130,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if recorded:
         print()
-        print("--- PROGRES: rentang posisi DB yang sudah tercatat ---")
+        print("--- PROGRES: rentang posisi katalog yang sudah tercatat ---")
         positions = [r.pos for r in recorded]
         print(f"  pertama : #{positions[0]} {recorded[0].ticker}")
         print(f"  terakhir: #{positions[-1]} {recorded[-1].ticker}")
@@ -158,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
             holes.append((lo, hi, inside))
         if holes:
             print()
-            print("--- LOMPATAN (posisi DB yang dilewati di tengah jalan) ---")
+            print("--- LOMPATAN (posisi katalog yang dilewati di tengah jalan) ---")
             for lo, hi, inside in holes:
                 n_unrec = sum(1 for r in inside if r.status == "unrecorded")
                 n_fail = sum(1 for r in inside if r.status == "failed")

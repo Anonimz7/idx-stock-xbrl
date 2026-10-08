@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 
 AUDIT_QUARTER = 4
-FIRST_QUARTER = 1
-LAST_QUARTER = 4
 
 
 @dataclass(frozen=True, slots=True)

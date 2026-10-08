@@ -21,7 +21,6 @@ from typing import Any
 
 LOGGER_NAME = "firefox_bridge"
 PROGRESS_LOGGER_NAME = "firefox_bridge.progress"
-FILE_NAME_MAX = 240
 
 # The attributes `logging` puts on every record itself. Taken from a real
 # LogRecord rather than hand-listed, so it cannot drift as Python adds fields.
@@ -49,12 +48,6 @@ def _log_file_path() -> Path:
     path = _log_dir() / "bridge.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def _safe_record(record: str) -> str:
-    if len(record) <= FILE_NAME_MAX:
-        return record
-    return record[:FILE_NAME_MAX]
 
 
 def safe_extra(fields: Mapping[str, Any]) -> dict[str, Any]:

@@ -174,6 +174,17 @@ Useful options:
 | `--download-dir` | Download root. Default `$FIREFOX_BRIDGE_INSTANCE_DIR` or `<download root>/instance`. |
 | `--dry-run` | Report planned downloads and skips, change nothing, no bridge needed. |
 
+### Auditing what is on disk
+
+The catalog says what *should* exist. `db/audit_downloads.py` checks that
+against what actually does, comparing all three sources at once: the catalog,
+`download_history.json`, and the folders on disk. It is read-only, needs no
+bridge, and exits `1` when anything is inconsistent.
+
+```powershell
+.\.venv\Scripts\python.exe db\audit_downloads.py
+```
+
 ### Cloudflare
 
 Direct downloads to the `instance.zip` URL are bare requests: no page origin and

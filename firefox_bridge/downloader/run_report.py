@@ -14,7 +14,6 @@ program that silently stops working.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +25,6 @@ REPORT_SCHEMA_VERSION = 1
 # reference from a lost extension without parsing a message. That distinction is
 # the whole reason CORE-004 exists.
 FAILURE_FIELDS = ("stock", "year", "quarter", "error_type", "message", "fatal")
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def build_run_report(
