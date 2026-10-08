@@ -6,10 +6,16 @@ Data contoh diambil dari bentuk halaman asli (filter Tahun 2025 / Tahunan).
 
 from __future__ import annotations
 
+import argparse
+import json
+
 import pytest
 from idx_watcher.instance_catalog import (
     CatalogError,
+    entries_from_api,
     find_element,
+    import_from_api,
+    main,
     merge_entries,
     next_page_button,
     parse_instance_hrefs,
@@ -192,3 +198,170 @@ class TestMergeEntries:
 def test_catalog_error_is_a_runtime_error() -> None:
     with pytest.raises(RuntimeError):
         raise CatalogError("x")
+
+
+def _api_row(
+    code: str = "AADI",
+    year: str = "2025",
+    *,
+    modified: str = "2026-03-06T15:57:00.003",
+    period: str = "Audit",
+    path: str | None = None,
+    attachments: list | None = None,
+) -> dict:
+    """Satu baris respons GetFinancialReport, sesuai bentuk aslinya."""
+    if path is None:
+        path = (
+            "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/"
+            "Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//"
+            f"Laporan Keuangan Tahun {year}/Audit/{code}/instance.zip"
+        )
+    if attachments is None:
+        attachments = [
+            {
+                "File_Name": "FinancialStatement-2025-Tahunan-AADI.pdf",
+                "File_Path": "/Portals/0/x/FinancialStatement-2025-Tahunan-AADI.pdf",
+            },
+            {"File_Name": "instance.zip", "File_Path": path},
+        ]
+    return {
+        "KodeEmiten": code,
+        "File_Modified": modified,
+        "Report_Period": period,
+        "Report_Year": year,
+        "NamaEmiten": "PT Contoh Tbk",
+        "Attachments": attachments,
+    }
+
+
+def _api_doc(*rows: dict) -> dict:
+    return {"ResultCount": len(rows), "Results": list(rows)}
+
+
+class TestEntriesFromApi:
+    def test_extracts_key_url_and_upload_time(self) -> None:
+        found = entries_from_api(_api_doc(_api_row()))
+        entry = found["2025|AADI"]
+        assert entry["ticker"] == "AADI"
+        assert entry["year"] == 2025
+        assert entry["period"] == "audit"
+        assert entry["uploaded_at"] == "2026-03-06T15:57"
+        assert entry["url"].endswith("/Laporan%20Keuangan%20Tahun%202025/Audit/AADI/instance.zip")
+
+    def test_spaces_are_percent_encoded_like_the_page(self) -> None:
+        found = entries_from_api(_api_doc(_api_row()))
+        # bentuk halaman memakai %20, bukan spasi mentah
+        assert " " not in found["2025|AADI"]["url"]
+        assert "%20" in found["2025|AADI"]["url"]
+
+    def test_picks_instance_zip_and_ignores_the_rest(self) -> None:
+        found = entries_from_api(
+            _api_doc(
+                _api_row(
+                    attachments=[
+                        {"File_Name": "FinancialStatement-2025-Tahunan-AADI.pdf", "File_Path": "/p.pdf"},
+                        {"File_Name": "inlineXBRL.zip", "File_Path": "/x.zip"},
+                        {"File_Name": "instance.zip", "File_Path": "/wanted/instance.zip"},
+                    ]
+                )
+            )
+        )
+        assert found["2025|AADI"]["url"] == "https://www.idx.co.id/wanted/instance.zip"
+
+    def test_row_without_instance_zip_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="instance.zip"):
+            entries_from_api(
+                _api_doc(_api_row(attachments=[{"File_Name": "a.pdf", "File_Path": "/x"}]))
+            )
+
+    def test_readies_several_rows(self) -> None:
+        found = entries_from_api(
+            _api_doc(_api_row("AADI"), _api_row("ZONE"), _api_row("ZYRX"))
+        )
+        assert set(found) == {"2025|AADI", "2025|ZONE", "2025|ZYRX"}
+
+    def test_period_comes_from_data_not_from_a_label(self) -> None:
+        found = entries_from_api(_api_doc(_api_row(period="TW1")))
+        assert found["2025|AADI"]["period"] == "tw1"
+
+    def test_document_that_is_not_an_object_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="objek JSON"):
+            entries_from_api([1, 2, 3])
+
+    def test_document_without_results_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="Results"):
+            entries_from_api({"ResultCount": 0})
+
+    def test_empty_results_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="kosong"):
+            entries_from_api(_api_doc())
+
+    def test_row_without_ticker_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="KodeEmiten"):
+            entries_from_api(_api_doc(_api_row(code="")))
+
+    def test_non_numeric_year_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="Report_Year"):
+            entries_from_api(_api_doc(_api_row(year="dua ribu")))
+
+    def test_duplicate_key_is_rejected(self) -> None:
+        with pytest.raises(CatalogError, match="ganda"):
+            entries_from_api(_api_doc(_api_row(), _api_row()))
+
+
+class TestImportFromApi:
+    @staticmethod
+    def _args(tmp_path, body: dict | str, *, years: str = "") -> argparse.Namespace:
+        text = json.dumps(body) if isinstance(body, dict) else str(body)
+        handle = tmp_path / "GetFinancialReport.json"
+        handle.write_text(text, encoding="utf-8")
+        return argparse.Namespace(api_file=str(handle), years=years)
+
+    def test_merges_into_catalog_and_counts(self, tmp_path) -> None:
+        catalog: dict = {}
+        args = self._args(tmp_path, _api_doc(_api_row()))
+        totals, added, changed = import_from_api(catalog, args, "2026-10-08T10:00:00+07:00")
+        assert (totals, added, changed) == (1, 1, 0)
+        assert catalog["entries"]["2025|AADI"]["first_seen"] == "2026-10-08T10:00:00+07:00"
+
+    def test_second_import_only_touches_last_seen(self, tmp_path) -> None:
+        catalog: dict = {}
+        args = self._args(tmp_path, _api_doc(_api_row()))
+        import_from_api(catalog, args, "2026-10-08T10:00:00+07:00")
+        totals, added, changed = import_from_api(catalog, args, "2026-10-09T10:00:00+07:00")
+        assert (totals, added, changed) == (1, 0, 0)
+        entry = catalog["entries"]["2025|AADI"]
+        assert entry["first_seen"] == "2026-10-08T10:00:00+07:00"
+        assert entry["last_seen"] == "2026-10-09T10:00:00+07:00"
+
+    def test_years_filter_keeps_only_requested_year(self, tmp_path) -> None:
+        catalog: dict = {}
+        args = self._args(
+            tmp_path,
+            _api_doc(_api_row("AADI", "2025"), _api_row("BBCA", "2024")),
+            years="2024",
+        )
+        totals, added, _ = import_from_api(catalog, args, "2026-10-08T10:00:00+07:00")
+        assert (totals, added) == (1, 1)
+        assert set(catalog["entries"]) == {"2024|BBCA"}
+
+    def test_years_filter_with_no_match_is_rejected(self, tmp_path) -> None:
+        args = self._args(tmp_path, _api_doc(_api_row()), years="1999")
+        with pytest.raises(CatalogError, match="1999"):
+            import_from_api({}, args, "2026-10-08T10:00:00+07:00")
+
+    def test_missing_file_is_rejected_with_download_hint(self) -> None:
+        args = argparse.Namespace(api_file="/does/not/exist.json", years="")
+        with pytest.raises(CatalogError, match="GetFinancialReport"):
+            import_from_api({}, args, "2026-10-08T10:00:00+07:00")
+
+    def test_invalid_json_is_rejected(self, tmp_path) -> None:
+        args = self._args(tmp_path, "{bukan json")
+        with pytest.raises(CatalogError, match="JSON valid"):
+            import_from_api({}, args, "2026-10-08T10:00:00+07:00")
+
+
+def test_source_api_without_api_file_is_a_usage_error() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--source", "api"])
+    assert excinfo.value.code == 2

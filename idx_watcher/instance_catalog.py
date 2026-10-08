@@ -55,6 +55,14 @@ from firefox_bridge.pacing import sleep_between_stocks
 
 PAGE_URL = "https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan/"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "db" / "instance_catalog.json"
+# `File_Path` dari API berupa path relatif; prefix ini membuatnya URL utuh
+# persis seperti yang ditulis halaman.
+INDEX_BASE = "https://www.idx.co.id"
+API_URL = (
+    "https://www.idx.co.id/primary/ListedCompany/GetFinancialReport"
+    "?indexFrom=1&pageSize=5000&reportType=rdf&EmitenType=s"
+    "&kodeEmiten=&SortColumn=KodeEmiten&SortOrder=asc&year={year}&periode=audit"
+)
 PAGE_SIZE = 12
 PERIOD = "audit"
 REPORT_TYPE_LABEL = "Laporan Keuangan"
@@ -406,12 +414,9 @@ def save_catalog(path: Path, catalog: dict) -> None:
     temp.replace(path)
 
 
-def run(args: argparse.Namespace) -> int:
-    output = Path(args.output)
-    catalog = load_catalog(output)
-    existing = len(catalog.get("entries", {}))
-    _log(f"membaca {existing} entri lama dari {output}")
-
+def scan_all_pages(catalog: dict, args: argparse.Namespace) -> tuple[int, int, int] | None:
+    """Pindai semua tahun lewat halaman listing. Mengembalikan `None` bila
+    halaman terblokir Cloudflare (katalog tidak boleh ditulis)."""
     totals = added = updated = 0
     with (
         FirefoxBridgeClient(base_url=args.bridge_url, timeout=args.timeout) as client,
@@ -430,7 +435,7 @@ def run(args: argparse.Namespace) -> int:
         )
         if any(marker in text for marker in BLOCK_MARKERS):
             _log("BLOCKED: Cloudflare menuntut verifikasi; hentikan agar tidak diulang terus")
-            return 1
+            return None
 
         elements = snapshot_elements(client, tab_id)
         offered = year_labels(elements)
@@ -464,6 +469,127 @@ def run(args: argparse.Namespace) -> int:
             added += new_count
             updated += changed_count
 
+    return totals, added, updated
+
+
+def entries_from_api(document: object) -> dict[str, dict]:
+    """Peta `TAHUN|EMITEN` -> entri dasar, dibaca dari respons `GetFinancialReport`.
+
+    Berkasnya datang dari unduhan manual: Python tidak bisa menembus
+    Cloudflare sendiri (HTTP 403, sudah diuji), dan jalur `page_text` bridge
+    tidak berjalan pada dokumen `application/json`. Karena itu pengambilan
+    berkas sengaja berada di luar program -- lihat rencana-katalog.md §2.4.
+    """
+    if not isinstance(document, dict):
+        raise CatalogError("file API bukan objek JSON")
+    results = document.get("Results")
+    if not isinstance(results, list):
+        raise CatalogError(
+            "file API tidak punya kunci `Results` -- bukan respons GetFinancialReport?"
+        )
+
+    found: dict[str, dict] = {}
+    for index, row in enumerate(results):
+        if not isinstance(row, dict):
+            raise CatalogError(f"Results[{index}] bukan objek")
+        code = str(row.get("KodeEmiten") or "").strip().upper()
+        raw_year = row.get("Report_Year")
+        if not code or raw_year in (None, ""):
+            raise CatalogError(f"Results[{index}] tanpa KodeEmiten/Report_Year")
+        year_text = str(raw_year)
+        try:
+            year = int(year_text)
+        except ValueError as exc:
+            raise CatalogError(
+                f"Results[{index}] Report_Year bukan angka: {raw_year!r}"
+            ) from exc
+
+        path = ""
+        attachments = row.get("Attachments")
+        for item in attachments if isinstance(attachments, list) else []:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("File_Name") or "").strip().lower() == "instance.zip":
+                path = str(item.get("File_Path") or "")
+                break
+        if not path:
+            raise CatalogError(f"{code} {year}: tidak ada instance.zip di Attachments")
+
+        key = f"{year}|{code}"
+        if key in found:
+            raise CatalogError(f"kunci ganda di file API: {key}")
+
+        # `File_Modified` milidetik, katalog memakai presisi menit seperti
+        # keluaran halaman -- biar satu kolom tidak bercampur dua format.
+        modified = str(row.get("File_Modified") or "")
+        period = str(row.get("Report_Period") or PERIOD).lower()
+        found[key] = {
+            "ticker": code,
+            "year": year,
+            "period": period,
+            "url": f"{INDEX_BASE}{path.replace(' ', '%20')}",
+            "uploaded_at": modified[:16],
+        }
+
+    if not found:
+        raise CatalogError("Results kosong")
+    return found
+
+
+def import_from_api(
+    catalog: dict,
+    args: argparse.Namespace,
+    now: str,
+) -> tuple[int, int, int]:
+    """Gabungkan isi file API ke katalog; kembalikan (dibaca, baru, berubah)."""
+    path = Path(args.api_file)
+    if not path.exists():
+        raise CatalogError(
+            f"file API tidak ditemukan: {path}\n"
+            "  Unduh dari https://www.idx.co.id/primary/ListedCompany/GetFinancialReport"
+            "?pageSize=5000&year=<TAHUN>&reportType=rdf&EmitenType=s&periode=audit"
+        )
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise CatalogError(f"{path} tidak bisa dibaca: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise CatalogError(f"{path} bukan JSON valid: {exc}") from exc
+
+    found = entries_from_api(document)
+    if args.years:
+        wanted = {chunk.strip() for chunk in args.years.split(",") if chunk.strip()}
+        available = sorted({str(item["year"]) for item in found.values()})
+        found = {key: item for key, item in found.items() if str(item["year"]) in wanted}
+        if not found:
+            raise CatalogError(
+                f"file API tidak memuat tahun {', '.join(sorted(wanted))} "
+                f"(file memuat {', '.join(available)})"
+            )
+
+    added, changed = merge_entries(catalog, found, {}, now)
+    _log(
+        f"API: {len(found)} entri dari {path.name} "
+        f"({added} baru, {changed} berubah)"
+    )
+    return len(found), added, changed
+
+
+def run(args: argparse.Namespace) -> int:
+    output = Path(args.output)
+    catalog = load_catalog(output)
+    existing = len(catalog.get("entries", {}))
+    _log(f"membaca {existing} entri lama dari {output}")
+
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    if args.source == "api":
+        totals, added, updated = import_from_api(catalog, args, now)
+    else:
+        scanned = scan_all_pages(catalog, args)
+        if scanned is None:
+            return 1
+        totals, added, updated = scanned
+
     if args.dry_run:
         _log(f"DRY RUN: {totals} entri terbaca, {added} baru, {updated} berubah; katalog tidak ditulis")
         return 0
@@ -484,6 +610,22 @@ def main(argv: list[str] | None = None) -> int:
         "--years",
         help="tahun dipisah koma, mis. 2025,2026; default semua tahun yang ditawarkan halaman",
     )
+    parser.add_argument(
+        "--source",
+        choices=("page", "api"),
+        default="page",
+        help=(
+            "asal katalog: 'page' = pindai halaman listing (default), "
+            "'api' = baca file JSON GetFinancialReport yang sudah diunduh manual"
+        ),
+    )
+    parser.add_argument(
+        "--api-file",
+        help=(
+            "path file JSON hasil unduhan dari GetFinancialReport "
+            "(wajib bila --source api); contoh: --api-file GetFinancialReport.json"
+        ),
+    )
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="path katalog JSON")
     parser.add_argument("--max-pages", type=int, default=0, help="batas halaman per tahun (0 = tanpa batas)")
     parser.add_argument("--delay", type=float, default=1.0, help="jeda minimum antar halaman (detik)")
@@ -492,6 +634,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bridge-url", default="http://127.0.0.1:8765")
     parser.add_argument("--timeout", type=float, default=90.0)
     args = parser.parse_args(argv)
+
+    if args.source == "api" and not args.api_file:
+        parser.error("--source api membutuhkan --api-file <path JSON hasil unduhan>")
 
     try:
         return run(args)

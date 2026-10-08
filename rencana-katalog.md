@@ -376,65 +376,101 @@ Keputusan:
 | Tidak ada satu pun kode 404 yang ada di katalog | Pola konstruksi bersih, 404 memang artinya tidak ada laporan | Lanjut ke langkah 3–4 dengan yakin ← **kasus ini, 62/62** |
 | Ada yang **ada di katalog** tapi tetap 404 | **Pola URL kita salah** untuk emiten itu | Selidiki `File_Path` mereka; ini temuan severity tinggi, bukan bug kecil |
 
-### Langkah 2 — endpoint `evaluate` di bridge [RENCANA]
+### Langkah 2 — endpoint `evaluate` di bridge **[GUGUR — 8 Okt 2026]**
 
-Satu-satunya penghalang agar API bisa dipakai (§2.2).
+Dibatalkan karena **tidak lagi diperlukan**, bukan karena gagal.
 
-**Server** — rute baru di `firefox_bridge/app.py` (FastAPI, sudah ada
-`FastAPI(...)` di baris 64):
+Dasarnya: uji langsung membuktikan Python **tidak bisa** menembus API tanpa
+peramban —
 
 ```
-POST /api/v1/tabs/{tab_id}/evaluate
-body: { "expression": str, "await": bool = true, "timeout": float = 30 }
-→ { "ok": bool, "value": any, "error": str | null }
+httpx.get(GetFinancialReport, headers=<browser>)  →  HTTP 403 text/html
+httpx.get(GetFinancialReport, tanpa header)       →  HTTP 403 text/html
 ```
 
-**Ekstensi** (`extension/`): handler baru yang mengeksekusi `expression`
-di dunia halaman (**MAIN world**, bukan isolated world), agar `fetch`
-memakai origin dan cookie halaman termasuk clearance Cloudflare. Hasilnya
-dikembalikan lewat kanal messaging yang sudah ada.
+403 itu berarti pengambilan **harus** dari dalam peramban yang sudah lolos
+Cloudflare. Ada tiga jalur yang memungkinkan; pemilik memilih yang ketiga:
+**unduh `GetFinancialReport.json` secara manual**, lalu program hanya
+**membaca berkas itu**.
 
-**Client** (`firefox_bridge/client.py`): metode `evaluate(tab_id, expression,
-*, await_=True, timeout=...)`.
+```
+1. evaluate di firefox-bridge   -> perlu ekstensi berubah + reload   [ditolak]
+2. evaluate di browser Chromium -> perlu sesi IDX terpisah           [ditolak]
+3. baca file JSON hasil unduhan -> nol kode koneksi                  [DIPILIH]
+```
 
-**Uji pertama** (urutannya penting, gagal berurutan = salah asumsi):
+Konsekuensinya, dua `[PERLU KEPUTUSAN]` yang sebelumnya mengantre di
+belakang langkah ini ikut gugur, keduanya sudah dihapus dari teks:
 
-1. `evaluate` `"document.title"` → judul halaman
-2. `evaluate` `"location.href"` → URL halaman
-3. `evaluate` pada tab yang sudah di halaman listing:
-   ```js
-   fetch('/primary/ListedCompany/GetFinancialReport?indexFrom=1&pageSize=5000&year=2025&reportType=rdf&EmitenType=s&periode=audit&kodeEmiten=&SortColumn=KodeEmiten&SortOrder=asc')
-     .then(r => r.text())
-   ```
-   → harus berupa JSON berisi `ResultCount` dan `Results`.
+- **Keamanan `evaluate`** — moot. Tidak ada endpoint yang dieksekusi,
+  `firefox_bridge/app.py` tidak disentuh.
+- **Versi ekstensi 0.1.8 → naik** — moot. `extension/` tidak disentuh,
+  jadi langkah verifikasi `task.md` §13 tidak perlu diulang.
 
-**Keamanan [PERLU KEPUTUSAN]:** endpoint ini menambah kapabilitas —
-mengeksekusi JS arbitrer di tab mana pun. Saat ini bridge sudah dibatasi
-localhost + token, tapi penambahan ini layak dibahas dan didokumentasikan
-sebelum dikerjakan, termasuk apakah `expression` perlu dibatasi.
+Satu-satunya `[PERLU KEPUTUSAN]` yang masih hidup ada di Langkah 4
+(--catalog menggantikan `--stocks-file` atau berdampingan).
 
-**Juga [PERLU KEPUTUSAN]:** setelah ekstensi berubah, versinya naik dari
-0.1.8, dan seluruh langkah verifikasi di `task.md` §13 soal ekstensi
-layak diulang minimal sekali.
+Sisa desain endpoint dipertahankan di riwayat git bila suatu saat
+dibutuhkan lagi; tidak ada pekerjaan yang hilang, hanya ditunda.
 
-### Langkah 3 — mode `--source api` pada watcher [RENCANA]
+> Perlu diingat: pilihan ini menjadikan **kualitas file JSON menjadi
+> tanggung jawab manusia**. Kalau file itu basi, katalog ikut basi — tidak
+> ada yang memverifikasi kesegarannya otomatis. Lihat jebakan §4 butir 18.
 
-`idx_watcher/instance_catalog.py` sudah punya jalur halaman yang terbukti
-jalan. Tambahkan:
+### Langkah 3 — mode `--source api` pada watcher **[SELESAI 8 Okt 2026]**
+
+Selesai tanpa menyentuh bridge, ekstensi, maupun server — jalurnya jadi
+murni berkas, karena langkah 2 gugur.
+
+`idx_watcher/instance_catalog.py` kini punya dua sumber:
 
 ```
 --source page   (default, jalur lama, tetap dipertahankan)
---source api    (baru, butuh langkah 2)
+--source api    (baru, wajib disertai --api-file)
+--api-file PATH (file JSON hasil unduhan manual dari GetFinancialReport)
 ```
 
-Mode `api`: satu `evaluate` per (tahun, periode), `pageSize` besar, lalu
-iterasi `Results`; untuk tiap entri pilih lampiran `File_Name == "instance.zip"`
-dan ambil `url = "https://www.idx.co.id" + File_Path`,
-`uploaded_at = File_Modified` (potong ke menit agar format katalog tetap sama).
+Mode `api` mengimpor `Results` → untuk tiap entri memilih lampiran
+`File_Name == "instance.zip"`, lalu:
+
+- `url` = `https://www.idx.co.id` + `File_Path`, spasi diganti `%20`
+  supaya bentuknya identik dengan URL halaman;
+- `uploaded_at` = `File_Modified` **dipotong ke menit** — API memberi
+  presisi milidetik, halaman menit, dan satu kolom tidak boleh
+  bercampur dua format;
+- `period` = `Report_Period` huruf kecil, bukan label yang ditulis tetap;
+- kunci = `f"{tahun}|{KODE}"`, sama dengan katalog halaman.
+
+Penggabungan memakai `merge_entries` yang **sudah lama diuji** — mode `api`
+tidak menulis ulang logika merge, hanya memasok bahan.
 
 Mode `api` **bukan pengganti** mode `page`: API bisa berubah sewaktu-waktu
 tanpa pemberitahuan, sedangkan halaman adalah jalur yang sudah terbukti.
 Mode `page` dipertahankan sebagai fallback dan untuk verifikasi silang.
+
+**Sifat merge = tambah-saja, tidak pernah hapus** (konsisten dengan mode
+halaman). Karena itu entri yang hilang dari API tetap diam di katalog.
+Ini disengaja; kalau suatu saat perlu penyusutan, itu keputusan terpisah.
+
+**Bukti jalan** (8 Okt 2026, terhadap `GetFinancialReport.json` asli 890
+baris dan katalog yang sudah berisi 890 entri):
+
+```
+$ python -m idx_watcher.instance_catalog --source api \
+      --api-file C:\Users\ORCA\Downloads\GetFinancialReport.json --dry-run
+[15:25:22] membaca 890 entri lama dari ...\db\instance_catalog.json
+[15:25:22] API: 890 entri dari GetFinancialReport.json (0 baru, 0 berubah)
+[15:25:22] DRY RUN: 890 entri terbaca, 0 baru, 0 berubah; katalog tidak ditulis
+EXIT = 0
+```
+
+890/890 terbaca dan **nol berubah** — artinya parser API menghasilkan
+entri yang persis sama dengan yang sudah ada di katalog. Itu uji
+kesetaraan, bukan sekadar "tidak error". 19 tes baru mengunci kontraknya.
+
+**Gerbang setelah perubahan ini (8 Okt 2026):** pytest **631 tes / 36
+file, exit 0** (naik dari 612); ruff **14** dan mypy gate **6** — persis
+baseline, nol dari file yang disentuh; `mypy idx_watcher` **Success**.
 
 ### Langkah 4 — downloader membaca katalog [RENCANA]
 
@@ -542,6 +578,16 @@ Semua ini pernah memakan waktu dalam sesi ini. Jangan diulangi.
     `firefox_bridge.instance.paths.instance_download_dir()`, dan
     `stock_year_complete(..., download_dir=root)` wajib diberi `root` secara
     eksplisit.
+18. **Jalur API tidak bisa dijalankan Python sendiri — dan kini bergantung
+    pada manusia.** Uji langsung `httpx.get(GetFinancialReport)` dengan header
+    peramban maupun tanpa header sama sekali **keduanya 403** (halaman blokir
+    Cloudflare), jadi pengambilan wajib lewat peramban. Jalur yang dipakai
+    kini: file diunduh manual, program hanya membaca (§3 Langkah 3). Efek
+    sampingnya **belum diuji**: tidak ada yang memeriksa apakah
+    `GetFinancialReport.json` masih segar. File basi → katalog ikut basi,
+    dan `--source api` tetap akan melapor "0 berubah" dengan nada sukses.
+    Sebelum memakai hasilnya, cocokkan tanggal file terhadap
+    `File_Modified` terbaru di dalamnya.
 
 ---
 
@@ -566,10 +612,11 @@ commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
 
 | Gate | Nilai | Catatan |
 | --- | --- | --- |
-| pytest | hijau | **612 tes** di 36 file (23 di antaranya milik `idx_watcher`); 588 saat baseline 7 Okt |
+| pytest | hijau | **631 tes** di 36 file (42 di antaranya milik `idx_watcher`); 612 saat baseline 8 Okt pagi, 588 saat baseline 7 Okt |
 | ruff file baru | **0** | wajib tetap 0 |
-| ruff penuh | **14** | pre-existing. Turun dari baseline 17 karena 3 error ikut terhapus bersama `announcement_watcher.py` (sudah diverifikasi: file lama persis 3 error) |
+| ruff penuh | **14** | pre-existing (`cli.py`, `client.py`, `session.py`, `rest_manager.py`, 3 file tes). Turun dari baseline 17 karena 3 error ikut terhapus bersama `announcement_watcher.py` |
 | mypy gate | **6** | pre-existing di `firefox_bridge/cli.py`. Tidak boleh naik |
+| mypy `idx_watcher` | **0** | Success; menangkap `int(raw_year)` yang bertipe `Any \| None` saat Langkah 3 ditulis |
 | mypy `.` | ±90 | bukan gate, ada di `tests/` |
 
 ---
@@ -580,15 +627,24 @@ commit `d4f52f1`); angka tidak bergerak sejak saat itu selain jumlah tes.
       62 gagal `404 Not Found`, 0 folder kosong, 0 file tersisa di staging**
 - [x] Kode 404 sudah dicek terhadap katalog, hasilnya didokumentasikan
       (§3 langkah 1) — **62/62 tidak ada di API; 890/890 URL identik**
-- [ ] Endpoint `evaluate` teruji `document.title` → `location.href` → `fetch` API
-- [ ] `--source api` dan `--source page` **bukan** untuk membuktikan keduanya
-      sama — keduanya memang **tidak** akan sama (§2.4). Yang diuji:
-      `--source page` **≤** `--source api`, dan selisihnya harus bisa
-      dijelaskan satu per satu. Selama ini selisihnya `ZONE`, `ZYRX`.
 - [ ] Mode `--catalog` menolak mengunduh di luar katalog, dan 404 di atas
       URL katalog dilaporkan sebagai anomali, bukan "tidak ada laporan"
-- [ ] Gate §5 tidak bergerak ke arah yang salah
-- [ ] Ekstensi 0.1.9 diverifikasi ulang bila ikut berubah
+- [x] `--source api` berjalan dan **setara** dengan katalog halaman —
+      **8 Okt: `--source api --dry-run` melapor 890 dibaca / 0 baru /
+      0 berubah** terhadap katalog berisi 890 entri. 19 tes mengunci
+      parsernya, `mypy idx_watcher` Success.
+- [x] `--source page` ≤ `--source api`, selisihnya bisa dijelaskan
+      per entri (§2.4) — **sudah dibuktikan: 888 vs 890, sisanya `ZONE`
+      dan `ZYRX`**. Keduanya kini ikut di katalog lewat `--source api`.
+      Catatan: keduanya memang **tidak** akan identik, jadi ini bukan
+      syarat bahwa angkanya cocok, hanya bahwa selisihnya terbaca.
+- [ ] Endpoint `evaluate` — **GUGUR** (langkah 2 dibatalkan, pemilik memilih
+      membaca file unduhan manual). Dicoret sebagai hal yang tidak perlu
+      dikerjakan, bukan sebagai selesai.
+- [ ] Gate §5 tidak bergerak ke arah yang salah — **gerbang 8 Okt: 631 tes,
+      ruff 14, mypy 6, mypy idx_watcher 0; tidak bergerak.**
+- [ ] Ekstensi 0.1.9 diverifikasi ulang — **tidak berlaku**, ekstensi tidak
+      berubah (masih 0.1.8), langkah ini ikut gugur bersama langkah 2.
 
 ## 7. Di luar rencana ini
 
