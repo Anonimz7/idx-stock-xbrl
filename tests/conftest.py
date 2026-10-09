@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from firefox_bridge.instance import paths as instance_paths
 from firefox_bridge.logging_config import reset_logging
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -51,6 +52,28 @@ def isolated_download_dir(
     """
     root = tmp_path_factory.mktemp("suite-downloads")
     monkeypatch.setenv("FIREFOX_BRIDGE_DOWNLOAD_DIR", str(root))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_repository_data_dir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Keep the test suite out of the repository's own `data/instance/`.
+
+    The same hazard as `isolated_download_dir`, one level closer to home. This
+    program defaults to the archives the repository tracks, so a test that omits
+    `--download-dir` resolves against 1,774 real ZIP files -- and `scan_staging`
+    prunes stale files from the very folder they are kept in. A suite that can
+    delete a year of downloaded reports is not a test suite.
+
+    The constant is aimed at a path that does not exist, which makes the
+    download-root fallback reachable again for the tests that assert it. A test
+    that wants the repository default sets the constant back itself, so the
+    choice is visible where it is made rather than inherited from a fixture.
+    """
+    absent = tmp_path_factory.mktemp("suite-no-repository-data") / "data" / "instance"
+    monkeypatch.setattr(instance_paths, "REPOSITORY_INSTANCE_DIR", absent)
     yield
 
 

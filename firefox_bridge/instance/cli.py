@@ -122,7 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Root directory for downloaded archives "
-            "(default: $FIREFOX_BRIDGE_INSTANCE_DIR or <default>/instance). "
+            "(default: $FIREFOX_BRIDGE_INSTANCE_DIR, else the repository's "
+            "data/instance/, else <downloads>/instance). "
             "Kept separate from the page-driven program's root so their histories "
             "cannot collide. Files are saved under <dir>/saham/<YEAR>/<STOCK>/."
         ),

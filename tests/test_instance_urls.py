@@ -22,6 +22,7 @@ from firefox_bridge.instance import (
     instance_url,
     validate_instance_url,
 )
+from firefox_bridge.instance import paths as instance_paths
 from firefox_bridge.validation import ValidationError
 
 BASE = (
@@ -143,17 +144,39 @@ def test_staging_is_anchored_to_firefoxs_root_not_the_instance_root(
     assert not root.is_relative_to(instance_download_dir())
 
 
-def test_default_download_dir_is_separate_from_the_page_flow(
+def test_default_root_is_the_repository_data_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """The folder written to is the folder the repository tracks.
+
+    Archives, the catalog listing them and the history recording them are versioned
+    together or the arrangement is worthless. A default pointing anywhere else --
+    even somewhere equally valid -- leaves the repository claiming archives that
+    quietly stop receiving updates, and the next run starts from a tree the commit
+    history cannot explain.
+    """
+    monkeypatch.delenv("FIREFOX_BRIDGE_INSTANCE_DIR", raising=False)
+    repository_data = tmp_path / "data" / "instance"
+    repository_data.mkdir(parents=True)
+    monkeypatch.setattr(instance_paths, "REPOSITORY_INSTANCE_DIR", repository_data)
+
+    assert instance_download_dir() == repository_data
+
+
+def test_without_a_repository_data_folder_it_falls_back_apart_from_the_page_flow(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """A shared root would let the two histories overwrite each other.
 
     History is keyed by (stock, year, quarter) with no archive column, so the
     second program to write a key would leave the first with a hash it cannot
-    reproduce -- and re-downloading on every subsequent run.
+    reproduce -- and re-downloading on every subsequent run. An installed copy of
+    the package has no repository beside it, and still has to land somewhere that
+    is not the other program's folder.
     """
     monkeypatch.delenv("FIREFOX_BRIDGE_INSTANCE_DIR", raising=False)
     monkeypatch.setenv("FIREFOX_BRIDGE_DOWNLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(instance_paths, "REPOSITORY_INSTANCE_DIR", tmp_path / "absent")
 
     assert instance_download_dir() == tmp_path / "instance"
 

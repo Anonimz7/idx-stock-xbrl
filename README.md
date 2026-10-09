@@ -171,7 +171,7 @@ Useful options:
 | `--catalog` | Catalog JSON. Default `db/instance_catalog_<year>.json` — resolved from `--year`, the same file `idx_watcher` writes, so the command above needs no second argument. |
 | `--year` | Reporting year. |
 | `--delay` / `--delay-max` | Seconds between stocks; with `--delay-max`, uniform random in `[--delay, --delay-max]`. Minimum 1. |
-| `--download-dir` | Download root. Default `$FIREFOX_BRIDGE_INSTANCE_DIR` or `<download root>/instance`. |
+| `--download-dir` | Download root. Default `$FIREFOX_BRIDGE_INSTANCE_DIR`, else the repository's `data/instance/`, else `<download root>/instance`. Archives are kept beside the catalog and the history that describe them, so all three are versioned together instead of drifting apart. |
 | `--dry-run` | Report planned downloads and skips, change nothing, no bridge needed. |
 
 ### Auditing what is on disk
@@ -314,7 +314,7 @@ and only then updates the JSON.
       "2025": {
         "1": {
           "url": "https://www.idx.co.id/.../TW1/NCKL/inlineXBRL.zip",
-          "file": "saham/NCKL/2025/NCKL_inlineXBRL_T1_2025.zip",
+          "file": "saham/2025/NCKL/NCKL_inlineXBRL_T1_2025.zip",
           "size": 243904,
           "sha256": "6bfaad2e...",
           "duplicate_of": null,

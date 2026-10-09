@@ -33,8 +33,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from firefox_bridge.downloader.paths import history_filename
+from firefox_bridge.downloader.paths import SAHAM_FOLDER, history_filename
 from firefox_bridge.instance.catalog import CatalogError, catalog_path, load_entries
+from firefox_bridge.instance.paths import instance_download_dir
 
 SUCCESS_KEYS = ("sha256", "file")
 
@@ -99,7 +100,11 @@ def audit(catalog_path: Path, history_path: Path, dl_dir: Path, year: int):
 
 def main(argv: list[str] | None = None) -> int:
     here = Path(__file__).resolve().parent
-    base = Path.home() / "Downloads" / "instance" / "saham"
+    # Asked of the downloader rather than spelled out here. Two independent
+    # defaults for one folder is precisely how a completed download gets
+    # reported as entirely unrecorded: the archives were written to one path and
+    # the audit looked in another.
+    base = instance_download_dir() / SAHAM_FOLDER
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--catalog",

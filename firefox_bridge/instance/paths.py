@@ -33,6 +33,13 @@ from .urls import AUDITED_QUARTER
 # while still keeping histories, staging folders and archives disjoint.
 INSTANCE_SUBFOLDER = "instance"
 
+# The archives themselves are kept in the repository, beside the catalog that
+# lists them and the history that records them, so all three are versioned
+# together. Resolved from this file rather than configured: the folder has to be
+# the same one on every machine, and a setting that can silently point somewhere
+# else is how a repository ends up claiming archives it does not have.
+REPOSITORY_INSTANCE_DIR = Path(__file__).resolve().parents[2] / "data" / INSTANCE_SUBFOLDER
+
 
 def instance_download_dir(explicit: Path | str | None = None) -> Path:
     """Return the concrete download root for this program, never ``None``.
@@ -46,8 +53,14 @@ def instance_download_dir(explicit: Path | str | None = None) -> Path:
     override = os.environ.get("FIREFOX_BRIDGE_INSTANCE_DIR")
     if override:
         return Path(override).expanduser()
-    # Under the ordinary download root so both programs are found in one place,
-    # while histories, staging folders and archives stay disjoint.
+    # The repository's own data folder is the default: it sits beside the
+    # catalog and the history that describe these archives, so writing anywhere
+    # else leaves the repository claiming files that nobody updated. The ordinary
+    # download root stays the fallback for an installed copy of the package,
+    # which has no repository beside it and must still run rather than invent a
+    # directory inside site-packages.
+    if REPOSITORY_INSTANCE_DIR.is_dir():
+        return REPOSITORY_INSTANCE_DIR
     return download_root() / INSTANCE_SUBFOLDER
 
 

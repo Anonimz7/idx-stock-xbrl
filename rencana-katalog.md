@@ -370,7 +370,7 @@ Metode langkahnya (dipakai, lalu digantikan API — lihat §2.4):
 
 1. `python -m idx_watcher.instance_catalog --years 2025`
 2. Ambil semua kode berstatus `404 Not Found` dari
-   `C:\Users\ORCA\Downloads\instance\saham\download_history_<year>.json` (field
+   `data/instance/saham/download_history_<year>.json` (field
    `failed_at` + `reason == "404 Not Found"`).
 3. Cocokkan: `kunci = f"2025|{KODE}"`.
 
