@@ -24,6 +24,13 @@
 extension/manifest.json text eol=lf
 
 # Generated or binary: never touched.
-*.zip   binary
 *.png   binary
 *.ico   binary
+
+# The downloaded IDX instance.zip archives under data/instance/ are kept in the
+# repository as the record of what was actually fetched -- 1774 immutable files,
+# ~210 MB, none of which Git can usefully diff. Stored as plain blobs they would
+# make every clone carry 210 MB of payload, and a corrected archive would leave
+# its superseded copy in history forever. LFS keeps the repository at
+# pointer size and lets a clone skip the payload deliberately.
+*.zip   filter=lfs diff=lfs merge=lfs -text
