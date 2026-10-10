@@ -18,3 +18,12 @@ logs/
 # Daftar saham tersisa adalah hasil generate dari riwayat unduhan lokal, jadi
 # isinya berbeda di tiap mesin dan langsung usang begitu riwayat berubah.
 db/*.csv
+
+# Arsip yang sudah dipaketkan per tahun di data/instance/archives/ itu yang
+# versioned. File ZIP longgar di saham/<YEAR>/<CODE>/ hanya working copy lokal:
+# meng-track ribuan file identik memburamkan diff dan tidak menambah informasi
+# apa pun yang tidak sudah ada di dalam arsip + riwayat. Download baru tetap
+# ditulis ke sini dan working normal (resume, audit), tapi tidak pernah masuk
+# git -- untuk memperbarui arsip, paketkan ulang dengan build_archives.
+data/instance/saham/2024/
+data/instance/saham/2025/
